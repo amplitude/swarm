@@ -17,6 +17,12 @@ const CONSERVATIVE_DEFAULT: ModelCapabilities = {
 // ---------------------------------------------------------------------------
 
 const MLC_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
+  'SmolLM2-360M-Instruct-q4f16_1-MLC': {
+    supportsNativeFunctionCalling: false,
+    supportsSystemPromptWithTools: true,
+    maxContextTokens: 4096,
+    toolCallFormat: 'json-text',
+  },
   'Qwen3-8B-q4f16_1-MLC': {
     supportsNativeFunctionCalling: false,
     supportsSystemPromptWithTools: true,
@@ -48,7 +54,7 @@ const MLC_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
     toolCallFormat: 'json-text',
   },
   // Phi-3.5 Mini (3.8B, ~2 GB) — kept for capability recognition when explicitly configured by user.
-  // Not auto-selected per design: all automatic defaults are <=1.5B.
+  // Not auto-selected per design: all automatic defaults are <=360M WebLLM or <=0.5B Ollama.
   'Phi-3.5-mini-instruct-q4f16_1-MLC': {
     supportsNativeFunctionCalling: false,
     supportsSystemPromptWithTools: true,
@@ -150,10 +156,16 @@ export function getModelCapabilities(modelId: string): ModelCapabilities {
     return maybeDowngrade(modelId, ollamaCaps);
   }
 
-  // Check MLC model capabilities
+  // Check MLC model capabilities (using full modelId for MLC models)
   const mlcCaps = MLC_MODEL_CAPABILITIES[modelId];
   if (mlcCaps) {
     return maybeDowngrade(modelId, mlcCaps);
+  }
+
+  // Check MLC by bare name
+  const mlcCapsBare = MLC_MODEL_CAPABILITIES[bareId];
+  if (mlcCapsBare) {
+    return maybeDowngrade(modelId, mlcCapsBare);
   }
 
   // Fallback patterns
@@ -192,13 +204,16 @@ function maybeDowngrade(modelId: string, caps: ModelCapabilities): ModelCapabili
 /**
  * Estimated download bytes for known models.
  *
- * NOTE: These are unverified estimates from the MLC registry. No live smoke tests
- * have been run on WebLLM/MLC models — WebGPU is not available in this environment.
- * The sizes below are MLC-reported estimates, not measured.
+ * NOTE: These are MLC-reported estimates from the prebuiltAppConfig, not measured.
+ * No live smoke tests have been run on WebLLM/MLC models — WebGPU is not available
+ * in this test environment.
+ *
+ * SmolLM2-360M-Instruct-q4f16_1-MLC: 376 MB VRAM reported, estimated ~200 MB download
+ * (q4f16_1 quantization is aggressive, 360M params at 2 bytes/param ≈ 720 MB full,
+ * q4 ≈ 180 MB, plus overhead ≈ 200 MB).
  *
  * Ollama model sizes return 0 because they are handled by the local Ollama service,
- * not downloaded by the browser. Actual Ollama sizes have been live-verified
- * (see engine.ts RECOMMENDED_MODELS for measured sizes).
+ * not downloaded by the browser.
  */
 export function getModelEstimatedBytes(modelId: string): number {
   // Ollama models are downloaded by Ollama itself, not by the browser
@@ -206,8 +221,9 @@ export function getModelEstimatedBytes(modelId: string): number {
     return 0;
   }
 
-  // MLC models — approximate sizes from registry (unverified via live smoke test)
+  // MLC models — approximate sizes from registry (modelled, not measured via live smoke test)
   const mlcSizes: Record<string, number> = {
+    'SmolLM2-360M-Instruct-q4f16_1-MLC': 200 * 1024 * 1024,         // ~200 MB — smallest default
     'Qwen3-8B-q4f16_1-MLC': 5 * 1024 * 1024 * 1024,
     'Qwen3-4B-q4f16_1-MLC': 3 * 1024 * 1024 * 1024,
     'Hermes-3-Llama-3.1-8B-q4f16_1-MLC': 4 * 1024 * 1024 * 1024,
@@ -216,5 +232,5 @@ export function getModelEstimatedBytes(modelId: string): number {
     'Phi-3.5-mini-instruct-q4f16_1-MLC': 2 * 1024 * 1024 * 1024,
   };
 
-  return mlcSizes[modelId] ?? 4 * 1024 * 1024 * 1024; // fallback to 4GB
+  return mlcSizes[modelId] ?? 200 * 1024 * 1024; // fallback to 200 MB for unknown small models
 }

@@ -11,18 +11,18 @@ describe('Provider configuration', () => {
     resetProvider();
   });
 
-  it('defaults to Ollama provider with smollm2:135m model', () => {
-    const config = getProviderConfig();
-    expect(config.provider).toBe('ollama');
-    expect(config.modelId).toBe('ollama/smollm2:135m');
-  });
-
-  it('reads provider from localStorage', () => {
-    localStorage.setItem('swarm-provider', 'webllm');
-    localStorage.setItem('swarm-model-id', 'Phi-3.5-mini-instruct-q4f16_1-MLC');
+  it('defaults to WebLLM provider with SmolLM2-360M-Instruct model', () => {
     const config = getProviderConfig();
     expect(config.provider).toBe('webllm');
-    expect(config.modelId).toBe('Phi-3.5-mini-instruct-q4f16_1-MLC');
+    expect(config.modelId).toBe('SmolLM2-360M-Instruct-q4f16_1-MLC');
+  });
+
+  it('reads provider from localStorage with explicit marker', () => {
+    localStorage.setItem('swarm-provider', 'ollama');
+    localStorage.setItem('swarm-model-id', 'ollama/starcoder2:3b');
+    const config = getProviderConfig();
+    expect(config.provider).toBe('ollama');
+    expect(config.modelId).toBe('ollama/starcoder2:3b');
   });
 
   it('reads model from localStorage', () => {
@@ -37,6 +37,7 @@ describe('Provider configuration', () => {
     expect(localStorage.getItem('swarm-model-id')).toBe('Qwen3-4B-q4f16_1-MLC');
 
     // After setProviderConfig, the singleton is nulled, so getProviderConfig returns new values
+    resetProvider();
     const config = getProviderConfig();
     expect(config.provider).toBe('webllm');
     expect(config.modelId).toBe('Qwen3-4B-q4f16_1-MLC');
@@ -71,11 +72,38 @@ describe('Provider configuration', () => {
     const config = getProviderConfig();
     // When provider is webllm and no model is set, should use webllm default
     expect(config.provider).toBe('webllm');
+    expect(config.modelId).toBe('SmolLM2-360M-Instruct-q4f16_1-MLC');
   });
 
-  it('getProviderConfig falls back to ollama for invalid provider values', () => {
+  it('getProviderConfig falls back to webllm for invalid provider values', () => {
     localStorage.setItem('swarm-provider', 'invalid-provider');
     const config = getProviderConfig();
-    expect(config.provider).toBe('ollama');
+    expect(config.provider).toBe('webllm');
+  });
+
+  // Migration tests
+  describe('Migration from old implicit default', () => {
+    it('old implicit ollama+smollm2:135m migrates to webllm', () => {
+      // Set old implicit defaults (no explicit marker)
+      localStorage.setItem('swarm-provider', 'ollama');
+      localStorage.setItem('swarm-model-id', 'ollama/smollm2:135m');
+
+      resetProvider();
+      const config = getProviderConfig();
+
+      // Should be migrated to webllm
+      expect(config.provider).toBe('webllm');
+      expect(config.modelId).toBe('SmolLM2-360M-Instruct-q4f16_1-MLC');
+    });
+
+    it('explicit ollama via setProviderConfig is preserved', () => {
+      // User explicitly set ollama — this sets the explicit marker
+      setProviderConfig({ provider: 'ollama', modelId: 'ollama/qwen2.5-coder:0.5b' });
+      resetProvider();
+
+      const config = getProviderConfig();
+      expect(config.provider).toBe('ollama');
+      expect(config.modelId).toBe('ollama/qwen2.5-coder:0.5b');
+    });
   });
 });

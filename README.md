@@ -1,58 +1,38 @@
-# Swarm — Local-First Agent App Template
+# Swarm — Zero-Setup Local-First Agent App Template
 
 **Fork or use this template to build your own local-first agent app.**  
-No paid inference API, no cloud backend, no API keys — just your browser and a local Ollama service.  
-Experiment with small models (0.5B–1.5B), customize agents, prompts, tools, and UI, and ship your own branded agent product.
+No paid inference API, no cloud backend, no API keys — just your browser.  
+The default model (`SmolLM2-360M-Instruct-q4f16_1-MLC`, ~376 MB) is downloaded and cached by your browser automatically via WebGPU.
 
 ---
 
-## Why local models?
+## Why this approach?
 
-| Concern | Local (Ollama) | Cloud API |
-|---------|----------------|-----------|
-| Inference cost | $0 (your own compute + disk) | Per-token billing |
-| API keys | None needed | Requires account + key |
-| Privacy | Everything runs on your machine | Data sent to provider |
-| Offline | Works fully offline | Requires internet |
-| Model choice | Pull any Ollama-compatible model | Provider's model catalog |
-| Experimentation | Instant, free, no rate limits | Metered, rate-limited |
+| Concern | Swarm (WebLLM) | Cloud API | Ollama (expert mode) |
+|---------|----------------|-----------|----------------------|
+| Inference cost | $0 (your GPU + browser) | Per-token billing | $0 (your compute) |
+| Setup | Zero — opens and runs | API key + account | Install Ollama + pull model |
+| API keys | None needed | Requires account + key | None needed |
+| Privacy | Everything in your browser | Data sent to provider | Local machine only |
+| Offline | Works fully offline | Requires internet | Works fully offline |
+| Model quality | Intentionally low (360M params) | High (GPT-4, Claude) | Low (0.5B) to medium (7B) |
+| First-run delay | One-time ~376 MB download | None | One-time ~258 MB download |
 
-**Trade-offs:** Local models (especially 0.5B–1.5B) produce lower-quality output than large cloud models. Ollama is a local inference service that downloads models to disk (~400 MB for 0.5B, ~1 GB for 1.5B). See [local-model.md](docs/local-model.md) for details.
+**Zero-setup, intentionally low quality.** The default model is the smallest available in `@mlc-ai/web-llm` v0.2.82. Browser downloads and caches it automatically. Demo mode provides template responses when WebGPU is unavailable.
+
+For higher quality, select larger models in Settings, or switch to Ollama (expert mode).
 
 ---
 
-## Use this template
-
-### 1. GitHub template (recommended)
-
-Click **"Use this template"** at the top of the [repository](https://github.com/amplitude/swarm) to create a new repo pre-populated with all files.
-
-### 2. Manual fork / clone
+## Quickstart
 
 ```bash
-git clone https://github.com/amplitude/swarm.git my-agent-app
-cd my-agent-app
-git remote rename origin upstream  # optional: keep origin for your own repo
-```
-
-### 3. Five-minute quickstart
-
-```bash
-# Install Ollama (local inference service)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull the default model (397 MB)
-ollama pull qwen2.5-coder:0.5b
-
-# Install dependencies and start
 pnpm install
 pnpm dev
 ```
 
-Open **http://localhost:5173/swarm/** in your browser.
-
-> You can replace `qwen2.5-coder:0.5b` with any Ollama model.  
-> Try `qwen2.5-coder:1.5b` (986 MB) for better results, or `llama3.2:1b` (1.3 GB).
+Open **http://localhost:5173/swarm/** in Chrome 113+ (or any WebGPU-enabled browser).  
+No Ollama, no API keys, no configuration.
 
 ---
 
@@ -63,8 +43,9 @@ Open **http://localhost:5173/swarm/** in your browser.
 | Framework | React 18 + TypeScript |
 | Build | Vite 6 |
 | Styling | Tailwind CSS 4 |
-| LLM (default) | Ollama (local, <=1.5B models) |
-| LLM (expert) | WebLLM / WebGPU (>1.5B, manual only) |
+| LLM (default) | WebLLM / WebGPU (`SmolLM2-360M-Instruct-q4f16_1-MLC`, ~376 MB) |
+| LLM (expert) | Ollama (local, requires install) — selectable in Settings |
+| LLM (fallback) | Demo mode — deterministic templates when WebGPU unavailable |
 | State | Zustand + Dexie.js/IndexedDB |
 | Code sandbox | QuickJS WASM |
 | Diagrams | Mermaid.js |
@@ -88,51 +69,44 @@ Open **http://localhost:5173/swarm/** in your browser.
 
 ---
 
-## Customization map
+## Model configuration
 
-### Agents
-Edit `src/agents/` to add, remove, or modify agent personalities. Each agent has a system prompt, allowed tools, and handoff rules.
+### Default: WebLLM (zero-setup, no configuration)
 
-### Prompts
-Agent system prompts live in `src/agents/prompts/`. Modify tone, capabilities, or add domain-specific instructions.
+- **Model:** `SmolLM2-360M-Instruct-q4f16_1-MLC` — verified as the smallest chat/instruct model in `@mlc-ai/web-llm` v0.2.82.
+- **Size:** ~376 MB VRAM, estimated ~200 MB download.
+- **Inference:** Browser WebGPU (Chrome 113+, Edge 113+).
+- **Caching:** Automatic via browser Cache API. Downloaded once.
+- **Cost:** $0. No API key, no paid API.
 
-### Tools
-Add or remove tools in `src/tools/definitions.ts`. Each tool defines its function schema and execution handler.
+### Expert: Ollama (requires local install)
 
-### UI
-- Dashboard layout: `src/components/dashboard/MissionControl.tsx`
-- Agent cards: `src/components/dashboard/AgentCard.tsx`
-- Chat UI: `src/components/chat/`
-- Theme / colors: `tailwind.config.ts` and `src/styles/globals.css`
-- Icons: [Lucide React](https://lucide.dev/icons/) (bundled)
+Available in Settings → Model → Inference Provider → Ollama.  
+Requires Ollama to be installed and running. See [local-model.md](docs/local-model.md).
 
-### Model configuration
-- Default model: `src/llm/model-constants.ts` (`DEFAULT_MODEL`)
-- Fallback model: same file (`FALLBACK_MAP`, `DEFAULT_FALLBACK_MODEL_ID`)
-- Provider: `VITE_LLM_PROVIDER` env var or localStorage `swarm-provider`
+### Fallback: Demo mode
 
-### Branding
-- App name / title: `index.html` (`<title>`)
-- PWA manifest: `vite.config.ts` (`VitePWA` plugin options)
-- Icon: Replace `public/icon-192.png` and `public/icon-512.png`
+When WebGPU is unavailable or WebLLM initialization fails, Swarm enters **Demo Mode** — a deterministic template mode:
+- Clearly labeled "Demo Mode (no AI)"
+- Canned responses for common prompts
+- Full UI remains functional (builder, canvas, navigation)
+- Retry WebLLM and configure Ollama options in status bar
 
 ---
 
-## Local-model fallback chain
+## Configuration
 
-The app auto-selects the absolute smallest model (`smollm2:135m`, ~96 MB) on first run. If that model fails to load (model not found, unsupported architecture, capability check failure), it escalates to `qwen2.5-coder:0.5b` (397 MB).
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `VITE_LLM_PROVIDER` | `webllm` | Inference provider: `webllm`, `ollama`, or `demo` |
+| `VITE_OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama server URL (only when provider is `ollama`) |
+| `VITE_LLM_MODEL` | `SmolLM2-360M-Instruct-q4f16_1-MLC` | Model ID |
 
-**This only escalates for model-specific failures.** Network errors, auth failures, user cancellation, or generic generation errors never trigger fallback.
-
-Fallback map (from `src/llm/model-constants.ts`):
-
-| Primary | Fallback |
-|---------|----------|
-| smollm2:135m (~96 MB) | qwen2.5-coder:0.5b (397 MB) |
-
-There is **no automatic 1.5B path**. 1.5B+ models require explicit user selection.
-
-To disable fallback, set a specific model ID via environment variable or localStorage — this bypasses the fallback chain entirely.
+Runtime settings (localStorage):
+- `swarm-provider` — `"webllm"`, `"ollama"`, or `"demo"`
+- `swarm-model-id` — model identifier
+- `swarm-ollama-endpoint` — Ollama server URL
+- `swarm-provider-explicit` — set when user makes an explicit provider choice
 
 ---
 
@@ -145,76 +119,17 @@ pnpm test:run
 # Production build
 pnpm build
 
-# Geometry audit (requires build first + playwright)
-node scripts/geometry-audit.mjs
-
-# Blank-first-run E2E (requires build first)
-node scripts/e2e-blank-first-run.mjs
-
-# Live Ollama integration test (requires running Ollama)
-RUN_LIVE_OLLAMA=1 pnpm test:run -- src/__tests__/llm/
+# Type check
+npx tsc --noEmit
 ```
 
 ---
 
-## Deployment caveat
+## Deployment
 
-This app is designed for **local development and experimentation**. It is **not production-ready by default**:
-
-**Checklist before considering production use:**
-
-- [ ] **Security**: Add authentication and authorization. The app has none.
-- [ ] **Persistence**: IndexedDB data is per-browser. Add a real backend for multi-device sync.
-- [ ] **Model quality**: Local 0.5B–1.5B models produce unreliable output. Test thoroughly for your use case.
-- [ ] **Licensing / branding**: Review all dependencies (MIT by default). Replace placeholder icons and names.
-- [ ] **Rate limiting**: None exists. Add if exposing to untrusted users.
-- [ ] **Error handling**: Basic error boundaries exist. Expand for production resilience.
-- [ ] **Monitoring**: No telemetry or logging. Add your own observability.
-- [ ] **CSP / CORS**: No Content Security Policy. Add one before deploying to a shared domain.
-
-To build for deployment:
-
-```bash
-pnpm build
-# Output in dist/ — serve with any static file server
-# The app expects a base path of /swarm/ (configurable in vite.config.ts)
-```
-
----
-
-## Configuration
-
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `VITE_LLM_PROVIDER` | `ollama` | Inference provider: `ollama` or `webllm` |
-| `VITE_OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama server URL |
-| `VITE_LLM_MODEL` | `ollama/smollm2:135m` | Model ID (<=0.5B auto; WebLLM >1.5B requires explicit ID) |
-
-Runtime settings (localStorage):
-- `swarm-provider` — `"ollama"` or `"webllm"`
-- `swarm-model-id` — model identifier
-- `swarm-ollama-endpoint` — Ollama server URL
-
-See [docs/local-model.md](docs/local-model.md) for detailed configuration.
-
----
-
-## Requirements
-
-- **Default (Ollama):** [Ollama](https://ollama.com) local service, any modern browser
-- **WebLLM (expert):** Chrome 113+, Edge 113+, or WebGPU-enabled browser
-- ~96 MB–5 GB disk/storage depending on model
-
----
-
-## Documentation
-
-- [Local Model Setup](docs/local-model.md) — Model selection, configuration, troubleshooting
-- [System Architecture](docs/ARCHITECTURE.md)
-- [Design System](docs/DESIGN-SYSTEM.md)
-- [Model Compatibility](docs/MODEL-COMPATIBILITY.md)
-
----
+Built output in `dist/` — serve with any static file server.  
+The app is deployed as a private GitHub Pages site for authenticated access.  
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## License
 

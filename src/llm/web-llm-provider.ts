@@ -1,6 +1,13 @@
 import * as webllm from '@mlc-ai/web-llm';
 import type { LLMProvider, LLMRequest, LLMStreamChunk, LLMToolCall } from './engine';
 
+/**
+ * WebGPU availability check error message constants.
+ * These are used by the UI to detect and classify failures.
+ */
+export const WEBGPU_UNAVAILABLE_MSG = 'WebGPU is not available in this browser. Please use Chrome 113+, Edge 113+, or another WebGPU-enabled browser.';
+export const WEBGPU_NO_ADAPTER_MSG = 'No WebGPU adapter found. Your GPU or drivers may not be supported.';
+
 export class WebLLMProvider implements LLMProvider {
   private engine: webllm.MLCEngineInterface | null = null;
   private loadedModelId: string | null = null;
@@ -17,13 +24,32 @@ export class WebLLMProvider implements LLMProvider {
       await this.unload();
     }
 
+    // Check WebGPU availability before attempting to create the engine
+    const webgpuCheck = await checkWebGPU();
+    if (!webgpuCheck.supported) {
+      throw new Error(webgpuCheck.error ?? WEBGPU_UNAVAILABLE_MSG);
+    }
+
     const initProgressCallback = (report: webllm.InitProgressReport) => {
       onProgress?.(report.progress, report.text);
     };
 
-    this.engine = await webllm.CreateMLCEngine(modelId, {
-      initProgressCallback,
-    });
+    try {
+      this.engine = await webllm.CreateMLCEngine(modelId, {
+        initProgressCallback,
+      });
+    } catch (err) {
+      // If engine creation fails with a WebGPU-related error, wrap it clearly
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        message.toLowerCase().includes('webgpu') ||
+        message.toLowerCase().includes('gpu') ||
+        message.toLowerCase().includes('adapter')
+      ) {
+        throw new Error(`WebLLM initialization failed (WebGPU error): ${message}`);
+      }
+      throw err;
+    }
     this.loadedModelId = modelId;
   }
 
@@ -133,5 +159,28 @@ export class WebLLMProvider implements LLMProvider {
 
   getLoadedModel(): string | null {
     return this.loadedModelId;
+  }
+}
+
+/**
+ * Check if WebGPU is available in the current browser.
+ * Returns { supported: true } or { supported: false, error: string }.
+ */
+async function checkWebGPU(): Promise<{ supported: boolean; error?: string }> {
+  if (typeof navigator === 'undefined' || !navigator.gpu) {
+    return { supported: false, error: WEBGPU_UNAVAILABLE_MSG };
+  }
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      return { supported: false, error: WEBGPU_NO_ADAPTER_MSG };
+    }
+    return { supported: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      supported: false,
+      error: `Failed to initialize WebGPU: ${message}`,
+    };
   }
 }

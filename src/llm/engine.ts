@@ -35,6 +35,7 @@ export interface LLMProvider {
 // ---------------------------------------------------------------------------
 
 export {
+  MLC_AUTO_MODELS,
   OLLAMA_AUTO_MODELS,
   MLC_EXPERT_MODELS,
   RECOMMENDED_MODELS,

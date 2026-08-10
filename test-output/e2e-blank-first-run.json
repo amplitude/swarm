@@ -1,0 +1,120 @@
+{
+  "timestamp": "2026-08-10T22:09:34.817Z",
+  "baseUrl": "http://127.0.0.1:5199/swarm/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 720
+    },
+    "mobile": {
+      "width": 375,
+      "height": 812
+    }
+  },
+  "localStorage": {
+    "allKeys": {
+      "swarm-last-model": "ollama/qwen2.5-coder:0.5b",
+      "swarm-last-agent": "manager"
+    },
+    "swarmKeys": [
+      "swarm-last-model",
+      "swarm-last-agent"
+    ]
+  },
+  "indexedDB": {
+    "databases": {
+      "AgenticWebApp": {
+        "objectStores": [
+          "artifacts",
+          "conversations",
+          "messages",
+          "settings"
+        ],
+        "counts": {
+          "artifacts": 0,
+          "conversations": 0,
+          "messages": 0,
+          "settings": 0
+        }
+      }
+    }
+  },
+  "dom": {
+    "visibleText": [
+      "Swarm",
+      "v0.1.0",
+      "ollama/qwen2.5-coder:0.5b",
+      "Manager",
+      "Online",
+      "Primary team coordinator",
+      "Send a message to start the conversation.",
+      "Press Enter to send, Shift+Enter for new line",
+      "Specialist Agents",
+      "Coder",
+      "Idle",
+      "0",
+      "active",
+      "0",
+      "/",
+      "4096",
+      "PM",
+      "Idle",
+      "0",
+      "active",
+      "0",
+      "/",
+      "4096",
+      "Designer",
+      "Idle",
+      "0",
+      "active",
+      "0",
+      "/",
+      "4096",
+      "General",
+      "Idle",
+      "0",
+      "active",
+      "0",
+      "/",
+      "4096",
+      "Activity",
+      "0",
+      "events",
+      "No activity yet",
+      "Artifacts (",
+      "0",
+      ")",
+      "All Agents",
+      "Manager",
+      "Coder",
+      "PM",
+      "Designer",
+      "General",
+      "All Types",
+      "Code",
+      "Mermaid",
+      "Excalidraw",
+      "Document",
+      "Image",
+      "No artifacts yet",
+      "ollama/qwen2.5-coder:0.5b",
+      "Ready"
+    ]
+  },
+  "screenshots": {
+    "desktop": "/Users/averychan/Documents/amp/swarm/docs/screenshots/blank-first-run.png",
+    "mobile": "/Users/averychan/Documents/amp/swarm/docs/screenshots/blank-first-run-mobile.png"
+  },
+  "assertions": {
+    "titleTextVisible": true,
+    "ctaVisible": true,
+    "noStoredConversations": true,
+    "localStoragePreferenceKeys": [
+      "swarm-last-model",
+      "swarm-last-agent"
+    ],
+    "zeroConversationsInDB": true,
+    "zeroMessagesInDB": true
+  }
+}

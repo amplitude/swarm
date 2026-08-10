@@ -181,6 +181,29 @@ export class FallbackProvider implements LLMProvider {
   }
 
   /**
+   * Test-only flag: when set, the next load() call will simulate the primary model
+   * failing with a "capability check failed" error that is classified as 'model'
+   * (eligible for fallback). This exercises the production classifyLoadError path
+   * and the production fallback flow, even when Ollama and the primary model are
+   * available — because the simulated error emits the specific string that
+   * classifyLoadError recognizes as eligible.
+   *
+   * A deliberately simulated eligible signal — when 0.5B may otherwise pass the
+   * capability check in production, this lets tests prove the full 0.5B→1.5B
+   * transition works end-to-end.
+   */
+  private _simulateCapabilityCheckFailure: boolean = false;
+
+  /**
+   * Enable simulated primary failure for the next load() call.
+   * After load() completes (whether fallback triggered or not), the flag resets.
+   * Marked as deliberately simulated in output.
+   */
+  simulatePrimaryFailureForTest(): void {
+    this._simulateCapabilityCheckFailure = true;
+  }
+
+  /**
    * Whether a fallback was attempted in the current session.
    */
   getFallbackAttempted(): boolean {
@@ -201,9 +224,22 @@ export class FallbackProvider implements LLMProvider {
     this.fallbackAttempted = false;
     this.fallbackReason = null;
 
+    // Check for test-simulated capability-check failure
+    const simulateFailure = this._simulateCapabilityCheckFailure;
+    this._simulateCapabilityCheckFailure = false; // one-shot
+
     // Try the primary provider
     const primaryProvider = new OllamaProvider();
     try {
+      if (simulateFailure) {
+        // Deliberately simulated: emit the exact error string that classifyLoadError
+        // recognizes as 'model' (eligible for fallback). This exercises the complete
+        // production fallback chain even when the real 0.5B model is available.
+        const simulatedError = new Error(
+          'capability check failed: primary model "' + modelId + '" does not support required features',
+        );
+        throw simulatedError;
+      }
       await primaryProvider.load(modelId, onProgress);
       // Primary succeeded
       this.activeProvider = primaryProvider;

@@ -29,9 +29,9 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Swarm - Local AI Agent Team',
+        name: 'Swarm - Local-First Agent App Template',
         short_name: 'Swarm',
-        description: 'Fully offline, browser-based AI agent team powered by local models',
+        description: 'Template for building local-first agent apps; no paid inference API required',
         theme_color: '#0f172a',
         icons: [
           { src: '/swarm/icon-192.png', sizes: '192x192', type: 'image/png' },

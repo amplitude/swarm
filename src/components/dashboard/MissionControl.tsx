@@ -127,10 +127,10 @@ export function MissionControl() {
         </div>
       </header>
 
-      {/* Main split layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT: Manager Chat (60-65%) */}
-        <div className="flex flex-col w-[63%] min-w-0 border-r border-border-subtle">
+      {/* Main split layout — stacks full-width on mobile */}
+      <div className="flex flex-1 overflow-hidden max-md:flex-col max-md:overflow-y-auto">
+        {/* LEFT: Manager Chat (60-65%, full-width on mobile) */}
+        <div className="flex flex-col w-[63%] max-md:w-full min-w-0 border-r border-border-subtle max-md:border-r-0">
           {/* Manager header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-surface shrink-0">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg border bg-primary-500/15 text-primary-400 border-primary-400/20">
@@ -154,12 +154,12 @@ export function MissionControl() {
           </div>
         </div>
 
-        {/* RIGHT: Side Panel (35-40%) */}
-        <div className="flex flex-col w-[37%] min-w-0 overflow-y-auto overflow-x-hidden bg-surface-inset">
+        {/* RIGHT: Side Panel (35-40%, full-width on mobile) */}
+        <div className="flex flex-col w-[37%] max-md:w-full min-w-0 overflow-y-auto bg-surface-inset">
           {/* Specialist Agent Cards */}
           <div className="p-4 pb-2">
             <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">Specialist Agents</h3>
-            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
               {SPECIALIST_IDS.map((agentId) => (
                 <AgentCard
                   key={agentId}
@@ -176,7 +176,7 @@ export function MissionControl() {
           </div>
 
           {/* Activity Feed */}
-          <div className="px-4 pb-2">
+          <div className="px-4 pb-2 max-md:pb-0">
             <ActivityFeed items={feedItems} />
           </div>
 

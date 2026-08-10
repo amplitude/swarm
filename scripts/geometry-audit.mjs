@@ -60,15 +60,94 @@ function intersects(a, b) {
 }
 
 /**
+ * Check if two rects overlap but one is clipped by its own overflow settings.
+ * If rect A has non-visible overflow on either axis and rect B extends
+ * beyond A's bounds, the visual overlap is not real — it's clipped.
+ */
+function isScrollClipped(a, b) {
+  // If either element has clipping ancestors, check if the element extends
+  // beyond its nearest clipping ancestor and that ancestor (or a further-up
+  // ancestor) is nested within the other element.
+  
+  function elementClippedBy(el, other) {
+    if (!el.clipAncestors || el.clipAncestors.length === 0) return false;
+    
+    // Take the nearest clipping ancestor
+    const nearestClip = el.clipAncestors[0];
+    
+    // Element extends beyond its clipping ancestor?
+    const extendsBeyond = el.bottom > nearestClip.bottom || el.right > nearestClip.right ||
+                          el.y < nearestClip.y || el.x < nearestClip.x;
+    if (!extendsBeyond) return false;
+    
+    // If the clipping ancestor is adjacent to or above/before the other
+    // element (no overlap), then any intersection is from scroll extension
+    // and is not real
+    const clipsAdjacent = nearestClip.bottom <= other.y + 1 ||   // clip above other
+                          nearestClip.right <= other.x + 1 ||    // clip left of other
+                          nearestClip.y >= other.bottom - 1 ||   // clip below other
+                          nearestClip.x >= other.right - 1;      // clip right of other
+    if (clipsAdjacent) return true;
+    
+    // The intersection of el and other must be inside the nearestClip
+    const ix = Math.max(el.x, other.x);
+    const iy = Math.max(el.y, other.y);
+    const ir = Math.min(el.right, other.right);
+    const ib = Math.min(el.bottom, other.bottom);
+    if (ix >= ir || iy >= ib) return false;
+    
+    const iInClip = ix >= nearestClip.x && iy >= nearestClip.y &&
+                    ir <= nearestClip.right && ib <= nearestClip.bottom;
+    if (!iInClip) return false;
+    
+    // Either the nearestClip is inside 'other', OR any upstream clipping
+    // ancestor of el (e.g., el -> panel -> container) is inside 'other'
+    for (const clip of el.clipAncestors) {
+      const clipInsideOther = clip.x >= other.x - 1 && clip.y >= other.y - 1 &&
+                               clip.right <= other.right + 1 && clip.bottom <= other.bottom + 1;
+      if (clipInsideOther) return true;
+    }
+    
+    return false;
+  }
+  
+  return elementClippedBy(a, b) || elementClippedBy(b, a);
+}
+
+/**
  * Get computed bounding rects for elements matching a CSS selector.
- * Returns a flat array of geometry objects.
+ * Returns a flat array of geometry objects, including ancestor overflow info.
  */
 async function getRects(page, label, selector) {
   return page.evaluate(({ sel, lb }) => {
+    // Inline helper: find ALL ancestors that clip overflow (nearest first)
+    const findAllClippingAncestors = (el) => {
+      const result = [];
+      let parent = el.parentElement;
+      while (parent) {
+        const s = getComputedStyle(parent);
+        const ox = s.overflowX !== 'visible' && s.overflowX !== '';
+        const oy = s.overflowY !== 'visible' && s.overflowY !== '';
+        const o = s.overflow !== 'visible' && s.overflow !== '';
+        if (ox || oy || o) {
+          const cr = parent.getBoundingClientRect();
+          result.push({
+            x: Math.round(cr.x),
+            y: Math.round(cr.y),
+            right: Math.round(cr.right),
+            bottom: Math.round(cr.bottom),
+          });
+        }
+        parent = parent.parentElement;
+      }
+      return result;
+    };
+
     const els = document.querySelectorAll(sel);
     return Array.from(els).map((el) => {
       const r = el.getBoundingClientRect();
       const s = getComputedStyle(el);
+      const clipAncestors = findAllClippingAncestors(el);
       return {
         label: lb,
         tag: el.tagName,
@@ -87,6 +166,7 @@ async function getRects(page, label, selector) {
         cw: el.clientWidth,
         overflowX: s.overflowX,
         overflowY: s.overflowY,
+        clipAncestors,
       };
     });
   }, { sel: selector, lb: label });
@@ -180,6 +260,8 @@ async function runAudit(page, viewport, label) {
       if (a.h <= 0 || b.h <= 0 || a.w <= 0 || b.w <= 0) continue;
       // Skip known parent-child nesting
       if (isNested(a, b)) continue;
+      // Skip intersections caused by scroll-clipped children extending beyond parent bounds
+      if (isScrollClipped(a, b)) continue;
       // Skip header+main split which are adjacent
       if ((a.label.includes('header') && b.label.includes('split')) ||
           (b.label.includes('header') && a.label.includes('split'))) continue;

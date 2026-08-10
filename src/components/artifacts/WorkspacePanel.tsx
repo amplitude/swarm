@@ -53,7 +53,7 @@ export function WorkspacePanel() {
           <select
             value={agentFilter}
             onChange={(e) => setAgentFilter(e.target.value as AgentType | 'all')}
-            className="text-2xs bg-surface border border-border-subtle rounded px-1.5 py-1 text-text-secondary"
+            className="text-2xs bg-surface border border-border-subtle rounded px-1.5 py-1 text-text-secondary max-w-[110px] max-sm:max-w-[90px]"
           >
             {AGENT_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>{f.label}</option>
@@ -62,7 +62,7 @@ export function WorkspacePanel() {
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as ArtifactType | 'all')}
-            className="text-2xs bg-surface border border-border-subtle rounded px-1.5 py-1 text-text-secondary"
+            className="text-2xs bg-surface border border-border-subtle rounded px-1.5 py-1 text-text-secondary max-w-[110px] max-sm:max-w-[90px]"
           >
             {TYPE_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>{f.label}</option>

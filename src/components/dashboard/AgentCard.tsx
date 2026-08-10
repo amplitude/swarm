@@ -59,7 +59,7 @@ export function AgentCard({
   return (
     <div
       onClick={onClick}
-      className={`bg-surface-raised border border-border-subtle rounded-lg p-4 transition-all duration-200 hover:border-border-strong cursor-pointer border-l-2 min-w-[280px] max-sm:min-w-0 ${borderLeft} ${state.isThinking ? 'animate-pulse-dot' : ''} ${isSelected ? `bg-surface-overlay border-border-strong ${meta.activeGlow}` : ''}`}
+      className={`bg-surface-raised border border-border-subtle rounded-lg p-4 transition-all duration-200 hover:border-border-strong cursor-pointer border-l-2 min-w-[200px] max-md:min-w-0 ${borderLeft} ${state.isThinking ? 'animate-pulse-dot' : ''} ${isSelected ? `bg-surface-overlay border-border-strong ${meta.activeGlow}` : ''}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
@@ -71,7 +71,7 @@ export function AgentCard({
       </div>
 
       {/* Status / last message */}
-      <p className="text-xs text-text-secondary line-clamp-2 mb-3 min-h-[2rem]">
+      <p className="text-xs text-text-secondary line-clamp-2 mb-3 min-h-[2rem] break-words">
         {lastMessage || statusLabel}
       </p>
 
@@ -90,13 +90,13 @@ export function AgentCard({
         <div className="thinking-shimmer h-1.5 rounded-full mb-3" />
       )}
 
-      {/* Footer metrics */}
-      <div className="flex items-center gap-4 pt-2 border-t border-border-subtle">
-        <span className="inline-flex items-center gap-1 text-2xs text-text-tertiary font-mono">
-          <Wrench size={10} /> {toolCount} active
+      {/* Footer metrics — wraps on narrow panels */}
+      <div className="flex items-center gap-x-4 gap-y-1 pt-2 border-t border-border-subtle flex-wrap">
+        <span className="inline-flex items-center gap-1 text-2xs text-text-tertiary font-mono truncate max-w-full">
+          <Wrench size={10} className="shrink-0" /> {toolCount} active
         </span>
-        <span className="inline-flex items-center gap-1 text-2xs text-text-tertiary font-mono">
-          <Zap size={10} /> {tokenCount}/{maxTokens}
+        <span className="inline-flex items-center gap-1 text-2xs text-text-tertiary font-mono truncate max-w-full">
+          <Zap size={10} className="shrink-0" /> {tokenCount}/{maxTokens}
         </span>
       </div>
     </div>

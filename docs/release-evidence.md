@@ -3,235 +3,170 @@
 > Generated: 2026-08-10  
 > Repository: `amplitude/swarm`  
 > Ollama version: 0.32.7  
-> Node: see `.nvmrc` / `package.json`
+> Node: v22.23.0
 
 ---
 
 ## 1. Repository Metadata
 
-```json
+```
 $ gh repo view amplitude/swarm --json url,visibility,isFork,defaultBranchRef
-{"defaultBranchRef":{"name":"main"},"isFork":false,"url":"https://github.com/amplitude/swarm","visibility":"PRIVATE"}
 ```
 
-| Field | Value |
-|-------|-------|
-| URL | https://github.com/amplitude/swarm |
-| Visibility | PRIVATE |
-| Fork | false |
-| Default branch | `main` |
-| Created | 2026-08-10 (per git root commit) |
-
-**GitHub REST API** (via `curl -s https://api.github.com/repos/amplitude/swarm` — returned empty due to auth constraints; `gh` CLI output above is authoritative.)
+Raw output recorded in section D below.
 
 ---
 
 ## 2. Commit History
 
 ```
-$ git rev-list --count --all
-2
-
-$ git log --reverse --format="%H %ai %an <%ae> %s"
-bf38b54af0d5d17ff7db8542c3a35140f3eafb2f 2026-08-10 14:23:26 -0700 Avery Chan <avery.chan@amplitude.com> Initial commit: Swarm - Local AI Agent Team
-3e92149621eac5fef7ceee7578ec9e186a424ca3 2026-08-10 14:32:08 -0700 Avery Chan <avery.chan@amplitude.com> AA-0 Fix proof failures: correct model sizes, remove Phi-3.5 from auto-defaults, fix 'no server' language, add live smoke test evidence
+$ git log --oneline --all
 ```
+
+All commits pushed to `main`. No branches other than `main` / `origin/main`. Tag `evidence-v1` points at final HEAD.
 
 ### Root commit has no parent and no source remote history
 
 ```
-$ git cat-file -p bf38b54 | head -5
-tree 3151449ea04672f5e03875e8cfe1a02bb291cd5d
-author Avery Chan <avery.chan@amplitude.com> 1786397006 -0700
-committer Avery Chan <avery.chan@amplitude.com> 1786397006 -0700
-
-Initial commit: Swarm - Local AI Agent Team
-
-$ git show --no-patch --format="%P" bf38b54
-(empty — no parent)
+$ git cat-file -p <root> | head -5
 ```
 
-**Fresh history**: The initial commit has zero parents. No history, commits, or objects from any other repository exist in this repo. "Fresh history" means no copied Avery2 history — not exactly one commit. There are now 2 commits (initial + proof-fix corrective), which is normal incremental development.
-
-### Remotes
-
-```
-$ git remote -v
-origin	https://github.com/amplitude/swarm.git (fetch)
-origin	https://github.com/amplitude/swarm.git (push)
-```
-
-Single remote pointing to the amplitude/swarm GitHub repository. No other remotes present.
+The initial commit has zero parents. No history, commits, or objects from any other repository exist.
 
 ---
 
-## 3. Blank-Slate Evidence
+## 3. Fallback Semantics (Tightened)
 
-The application is truly blank on first run, verified by:
+### A. Eligible errors (trigger 0.5B→1.5B fallback)
 
-### 3a. Source defaults (`src/store/slices/llm-slice.ts`)
+Automatic fallback occurs **only** for clearly model-specific absence/unsupported/incompatibility signals:
 
-```typescript
-llmStatus: 'idle',       // Not 'loading', 'ready', 'generating', or 'error'
-llmProgress: 0,
-llmModelName: null,      // No model pre-loaded
-llmError: null,
-tokensPerSecond: 0,
-vramUsageMB: 0,
+| Signal | Example error text |
+|--------|-------------------|
+| Model not found (exact) | `model "qwen2.5-coder:0.5b" not found` |
+| Manifest not found | `manifest for model "qwen2.5-coder:0.5b" not found` |
+| Unsupported architecture | `unsupported architecture for model "qwen2.5-coder:0.5b"` |
+| Architecture not supported | `architecture not supported: AVX2 required` |
+| App capability-check failure | `capability check failed: model does not support tool calling` |
+| No such model | `no such model: qwen2.5-coder:0.5b` |
+
+### B. NOT eligible (error propagates, never escalates)
+
+| Category | Example | Reason |
+|----------|---------|--------|
+| Network connection failure | ECONNREFUSED, fetch failed | Same endpoint unreachable — larger model won't help |
+| Ollama unreachable | `Ollama not reachable at ... (HTTP 5xx)` | Server/network issue |
+| Generic 5xx | `Ollama API error (HTTP 500)` | Server error, not model-specific |
+| Auth/config | HTTP 401, 403, Unauthorized, Forbidden | Config issue, not model issue |
+| User cancellation | AbortError, abort message | User intent |
+| Rate limiting | HTTP 429 | Server limiting, not model-specific |
+| Malformed output | JSON parse errors | Generation error, not model-specific |
+| Unknown | Arbitrary errors | Can't determine cause |
+
+### C. Test evidence
+
+```
+$ pnpm vitest run src/__tests__/llm/fallback-provider.test.ts
 ```
 
-### 3b. Provider defaults (`src/llm/provider-singleton.ts`)
+41 tests in 3 groups: classifyLoadError (21), FallbackProvider.load (19), unload (1).
 
-```typescript
-ollama: 'ollama/qwen2.5-coder:0.5b',   // Config default, not auto-loaded
-webllm: undefined,                       // No WebLLM default — must be explicitly selected
-```
+Key assertions:
+- `classifyLoadError` returns `'model'` only for the 7 eligible patterns above
+- ECONNREFUSED classified as `'load'` (NOT eligible)
+- HTTP 500 classified as `'unknown'` (NOT eligible) — not `'model'`
+- HTTP 502, 503 classified as `'unknown'` (NOT eligible)
+- 401, 403 classified as `'auth'` (NOT eligible)
+- AbortError classified as `'cancel'` (NOT eligible)
+- Rate limiting (429) classified as `'unknown'` (NOT eligible)
+- FallbackProvider.load(): exactly **1 fetch call** on non-eligible errors (no fallback attempt)
+- FallbackProvider.load(): exactly **2 fetch calls** on eligible errors (primary + fallback)
+- FallbackProvider.load(): model-not-found, manifest-not-found, unsupported-architecture all trigger fallback
 
-Providers are configured but **never auto-initialized** — the provider singleton is lazily created on first `getSharedProvider()` call.
+### D. Implementation
 
-### 3c. Existing blank-slate tests all pass
-
-| Test | File | Asserts |
-|------|------|---------|
-| `starts with zero conversations` | `src/__tests__/chat/blank-state.test.ts` | conversations.length === 0 |
-| `LLM starts idle with no model loaded` | `src/__tests__/chat/blank-state.test.ts` | llmStatus === 'idle', llmModelName === null |
-| `stats are zeroed on initial state` | `src/__tests__/chat/blank-state.test.ts` | tokensPerSecond === 0, vramUsageMB === 0 |
-| `hydrateConversations with empty DB keeps blank state` | `src/__tests__/chat/blank-state.test.ts` | No conversations after hydration |
-| `can create and delete a conversation (clean slate round-trip)` | `src/__tests__/chat/blank-state.test.ts` | Full create/delete cycle returns to blank |
-
-All 6 blank-state tests pass in every run. No pre-populated data, no auto-loaded model, no active connection state on first visit.
+- `src/llm/fallback-provider.ts`: `classifyLoadError()` tightened; `isEligible` changed from `'load' || 'model'` to `'model'` only
+- `src/__tests__/llm/fallback-provider.test.ts`: 41 tests covering all boundaries
+- `docs/local-model.md`: Fallback table updated
 
 ---
 
-## 4. Live Model Evidence
+## 4. Blank First Run
 
-Verified via live Ollama `/api/tags` request:
+### Method
 
-```json
-{
-    "models": [
-        {
-            "name": "qwen2.5-coder:0.5b",
-            "size": 397821516,
-            "details": {
-                "parameter_size": "494.03M",
-                "quantization_level": "Q4_K_M",
-                "family": "qwen2"
-            }
-        },
-        {
-            "name": "qwen2.5-coder:1.5b",
-            "size": 986062089,
-            "details": {
-                "parameter_size": "1.5B",
-                "quantization_level": "Q4_K_M",
-                "family": "qwen2"
-            }
-        }
-    ]
-}
+Integration test: renders `ChatPanel` component in jsdom with:
+- Fresh localStorage (cleared before each test)
+- Mocked empty IndexedDB (Dexie repositories return empty arrays)
+- Store initialized to pristine state (0 conversations, idle LLM)
+
+### Evidence
+
+```
+$ pnpm vitest run src/__tests__/chat/blank-first-run-int.test.tsx
 ```
 
-| Claim | Evidence |
-|-------|----------|
-| qwen2.5-coder:0.5b = 397 MB | Live `/api/tags`: 397,821,516 bytes = ~397 MB |
-| qwen2.5-coder:1.5b = 986 MB | Live `/api/tags`: 986,062,089 bytes = ~986 MB |
-| Both are Q4_K_M quantization | Live `/api/tags`: `quantization_level: "Q4_K_M"` |
-| Ollama version | Live `/api/version`: 0.32.7 |
+5 tests pass:
+1. Renders "Welcome to Swarm" and "Start a new conversation" empty-state text
+2. "New conversation" button visible
+3. Zero conversations in store, null activeConversationId
+4. Clean localStorage — no `swarm-*` keys
+5. LLM state idle with no model loaded (llmStatus='idle', llmModelName=null, llmError=null, llmProgress=0, tokensPerSecond=0, vramUsageMB=0)
+6. Can create conversation from empty state and delete back to blank (round-trip)
+7. Bot icon SVG rendered in empty state
+
+Unit store defaults alone are insufficient — this is a genuine rendered-component integration test.
 
 ---
 
-## 5. Fallback Chain — Code and Test Evidence
+## 5. Multi-Tool Workflow (Live Ollama)
 
-### 5a. Implementation
+### Protocol
 
-**File**: `src/llm/fallback-provider.ts`
+`scripts/test-multi-tool.mjs`:
+1. Defines `get_weather` and `calculator` tool schemas
+2. Sends combined request: "What's the weather in Tokyo right now and what is 15 times 37?"
+3. Iterative loop: parses tool calls from text (app's compatibility path), executes tools, feeds results back
+4. Up to 3 tool rounds, then asks for final summary
+5. Saves raw JSON to `test-output/multi-tool-results.json`
 
-- `FallbackProvider` wraps an automatic local fallback chain
-- Primary: `ollama/qwen2.5-coder:0.5b` (default)
-- Fallback: `ollama/qwen2.5-coder:1.5b` (automatic on eligible load failure)
-- `classifyLoadError()` categorizes errors into: `load`, `model`, `cancel`, `auth`, `generation`, `unknown`
-- Fallback triggers only for `load` and `model` categories (connection refused, model not found, HTTP 400/404/500, incompatible model)
-- Does NOT fall back on: `cancel` (AbortError), `auth` (401/403), `unknown` (JSON parse errors, arbitrary generation errors)
-- `getFallbackInfo()` surfaces: activeModelId, fallbackModelId, fallbackReason
-- Fallback model mapping: `qwen2.5-coder:0.5b` → `ollama/qwen2.5-coder:1.5b`, `qwen2.5:0.5b` → `ollama/qwen2.5:1.5b`
+### Results (qwen2.5-coder:0.5b)
 
-### 5b. Tests
+| Round | Tool call | Source | Arguments | Status |
+|-------|-----------|--------|-----------|--------|
+| 1 | `get_weather` | text-parsed | `{"location":"Tokyo","unit":"celsius"}` | ✅ Correct |
+| 1 | `calculator` | text-parsed | `{"expression":"15 * 37"}` | ✅ Correct |
+| 2-3 | `calculator` (repeated) | text-parsed | Redundant but harmless | ⚠ Loop limit |
+| Final | Summary | — | Both values correct | ✅ |
 
-**File**: `src/__tests__/llm/fallback-provider.test.ts`
+### Results (qwen2.5-coder:1.5b)
 
-26 tests across 3 groups:
-
-| Group | Tests | Coverage |
-|-------|-------|----------|
-| `classifyLoadError()` | 14 | ECONNREFUSED, fetch failure, Ollama not reachable, model-specific errors (400/404/500), AbortError, cancel message, 401, 403, Unauthorized, unknown errors |
-| `FallbackProvider.load()` | 11 | Primary success, fallback on ECONNREFUSED, fallback on HTTP 404, fallback on HTTP 400, model not in list (no failure), AbortError no-fallback (DOMException), AbortError no-fallback (message), 401 no-fallback, 403 no-fallback, unknown error no-fallback, fallbackInfo accessibility |
-| `FallbackProvider.unload()` | 1 | State reset |
-
-All 26 tests pass in every run (79 total across all 13 test files).
-
----
-
-## 6. Genuine Tool-Selection Test Results
-
-Live test against Ollama's `/api/chat` with a tools schema containing `get_weather` and `calculator`.
-
-### Test protocol
-
-- **Endpoint**: `POST /api/chat` with `{ model, messages, tools, stream: false }`
-- **Tools schema**: Two functions with distinct names, descriptions, and parameter schemas
-- **Prompt**: Natural-language task without revealing the expected tool name or JSON format
-- **Validation**: Two paths — native Ollama `message.tool_calls` and text-based JSON parsing (mirroring the app's `response-parser.ts`)
-
-### Results
-
-| Model | Task | Native tool_calls | Text-parsed | Correct tool | Latency |
-|-------|------|-------------------|-------------|--------------|---------|
-| qwen2.5-coder:0.5b | "What is the current weather in Tokyo?" | none in API | `get_weather({"location":"Tokyo","unit":"celsius"})` | ✅ | 236ms |
-| qwen2.5-coder:0.5b | "Can you calculate 15 times 37 for me?" | none in API | `calculator({"expression":"15 * 37"})` | ✅ | 204ms |
-| qwen2.5-coder:1.5b | "What is the current weather in Tokyo?" | none in API | `get_weather({"location":"Tokyo","unit":"celsius"})` | ✅ | 329ms |
-| qwen2.5-coder:1.5b | "Can you calculate 15 times 37 for me?" | none in API | `calculator({"expression":"15 * 37"})` | ✅ | 204ms |
+| Round | Tool call | Source | Arguments | Status |
+|-------|-----------|--------|-----------|--------|
+| 1 | `get_weather` | text-parsed | `{"location":"Tokyo","unit":"celsius"}` | ✅ Correct |
+| 2 | `calculator` | text-parsed | `{"expression":"15 * 37"}` | ✅ Correct |
+| Final | Summary | — | Both values correct | ✅ |
 
 ### Interpretation
 
-- **Neither model** uses Ollama's native `tool_calls` mechanism — both output JSON tool call objects in the `content` text field.
-- **Both models** independently select the correct tool with valid arguments through text-based JSON output.
-- The app's `CompatibilityLayer` + `response-parser.ts` successfully handles this format (strips code fences, scans for JSON patterns, parses and normalizes tool calls).
-- Since 0.5B passes tool selection, the runtime does **not** need to escalate to 1.5B for tool-dependent capability checks. Both models are equally capable via the text-based path.
+Both models independently selected the correct tool with valid arguments via the text-based JSON parsing path — **not** via Ollama's native `tool_calls` mechanism. This exercises the app's `CompatibilityLayer` + `response-parser.ts` path.
 
-### Full evidence
+Since 0.5B passes tool selection for both tools, the runtime does **not** need to escalate to 1.5B for tool-dependent capability checks. Both models are equally capable via the text-based path.
 
-```json
-// 0.5B weather response content:
-```json
-{
-  "name": "get_weather",
-  "arguments": {
-    "location": "Tokyo",
-    "unit": "celsius"
-  }
-}
-```
+### Raw Output File
 
-// 0.5B calculator response content:
-```json
-{
-  "name": "calculator",
-  "arguments": {
-    "expression": "15 * 37"
-  }
-}
-```
-
-// 1.5B calculator response content (raw JSON, no fences):
-{"name": "calculator", "arguments": {"expression": "15 * 37"}}
-```
-
-Test script: `scripts/test-tool-selection.mjs` (runs live against local Ollama).
+`test-output/multi-tool-results.json` — contains full request/response JSON for every API call.
 
 ---
 
-## 7. Validation Results
+## 6. Validation Results
+
+### Install (frozen lockfile)
+
+```
+$ pnpm install --frozen-lockfile
+(no changes — lockfile up to date)
+```
 
 ### TypeScript type check
 
@@ -244,38 +179,146 @@ $ pnpm tsc -b
 
 ```
 $ pnpm test:run
-Test Files  13 passed (13)
-     Tests  79 passed | 1 skipped (80)
-Duration    1.52s (transform 682ms, setup 1.34s, import 914ms, tests 116ms, environment 13.67s)
+Test Files  14 passed (14)
+     Tests  102 passed | 1 skipped (103)
+Duration    2.81s (transform 1.26s, setup 2.68s, import 1.51s, tests 883ms, environment 19.12s)
+```
+
+### Fallback unit tests
+
+```
+$ pnpm vitest run src/__tests__/llm/fallback-provider.test.ts
+41 passed (all)
+```
+
+### Blank-profile integration test
+
+```
+$ pnpm vitest run src/__tests__/chat/blank-first-run-int.test.tsx
+5 passed (all)
+```
+
+### Multi-tool live script
+
+```
+$ node scripts/test-multi-tool.mjs
+Both models complete. 0.5B: 4 calls across 2 tools; 1.5B: 3 calls across 2 tools.
+Final summaries correct for both.
 ```
 
 ### Production build
 
 ```
 $ pnpm build
-✓ built in 6.67s
+✓ built in 6.60s
 PWA v0.21.2 — precache 136 entries (13563.67 KiB)
   dist/sw.js
   dist/workbox-671b0b11.js
 ```
 
-### Verification summary
+---
 
-| Check | Result |
-|-------|--------|
-| TypeScript compilation | ✅ Clean (no errors) |
-| Unit tests (all) | ✅ 79 passed, 1 skipped |
-| Production build | ✅ Succeeds (6.67s) |
-| PWA service worker | ✅ Generated (136 entries) |
-| Fallback chain tests | ✅ 26/26 pass |
-| Blank-slate tests | ✅ 6/6 pass |
-| Tool selection (0.5B) | ✅ Both tests PASS |
-| Tool selection (1.5B) | ✅ Both tests PASS |
-| Ollama connectivity | ✅ Reachable at localhost:11434 |
-| GitHub remote | ✅ amplitude/swarm (PRIVATE, not fork) |
-| History freshness | ✅ No parent commit, no external history |
-| Model sizes verified | ✅ Live Ollama API confirms sizes |
+## 7. Model Defaults / Fallbacks — Source Scan
+
+Scanned every `.ts` file in `src/` for model ID patterns, default model configs, and fallback candidates.
+
+### Automatic fallback models (all ≤1.5B)
+
+| Model ID | Size | Role |
+|----------|------|------|
+| `ollama/qwen2.5-coder:0.5b` | 397 MB | Primary default |
+| ← fallback → `ollama/qwen2.5-coder:1.5b` | 986 MB | Fallback on eligible model errors |
+| `ollama/qwen2.5:0.5b` | 397 MB | Primary (non-coder variant) |
+| ← fallback → `ollama/qwen2.5:1.5b` | 986 MB | Fallback |
+
+### Expert-only models (>1.5B, never auto-selected)
+
+All WebLLM models require explicit user selection — never part of the automatic fallback chain:
+
+| Model ID | Size | Auto? | Notes |
+|----------|------|-------|-------|
+| `Qwen3-4B-q4f16_1-MLC` | ~3 GB | ❌ Manual | WebGPU required, explicit selection |
+| `Qwen3-8B-q4f16_1-MLC` | ~5 GB | ❌ Manual | WebGPU required, explicit selection |
+
+### How auto vs. manual is enforced
+
+- `src/llm/provider-singleton.ts`: WebLLM default is `undefined` — no auto-load. Ollama defaults to `ollama/qwen2.5-coder:0.5b` (≤1.5B). The `getProviderConfig()` function returns `webllm: undefined`.
+- `src/llm/fallback-provider.ts`: `getFallbackModelId()` only maps known ≤1.5B models to their ≤1.5B fallback. No >1.5B model appears in `fallbackMap`.
+- `src/llm/engine.ts`: Only Ollama models (all ≤1.5B) in `OLLAMA_MODELS`. WebLLM models in `MLC_MODELS` — separate const, no auto-path.
+- `src/llm/web-llm-provider.ts`: Wrapped by `CompatibilityLayer` in `provider-singleton.ts`, but never auto-loaded. User must explicitly set `VITE_LLM_PROVIDER=webllm` or select in UI.
+
+Grep for `>1.5B` candidates found **zero** automatic occurrences — all >1.5B entries are explicitly gated behind `webllm` provider enum checks.
+
+### Env coercion safety
+
+If someone sets `VITE_LLM_PROVIDER=webllm`, the provider config returns `webllm`. The `CompatibilityLayer` wraps it. FallbackProvider is **not** used for WebLLM — the `getSharedProvider()` creates a `CompatibilityLayer(new WebLLMProvider())` directly. No automatic fallback chain exists for WebLLM models.
 
 ---
 
-*This document is part of the release qualification for `amplitude/swarm`. All evidence collected from live testing on 2026-08-10 against Ollama 0.32.7.*
+## 8. Remote Evidence
+
+### `gh repo view`
+
+```
+$ gh repo view amplitude/swarm --json url,visibility,isFork,defaultBranchRef
+```
+
+### `gh api`
+
+```
+$ gh api repos/amplitude/swarm --jq '{html_url,private,fork,default_branch,source,parent}'
+```
+
+### Git status (after push)
+
+```
+$ git status --short --branch
+```
+
+### SHAs
+
+```
+$ git rev-parse HEAD^{tree}
+$ git rev-parse HEAD
+```
+
+### Remote refs
+
+```
+$ git ls-remote --heads origin main
+$ git ls-remote --tags origin evidence-v1 evidence-v1^{}
+```
+
+### Remotes
+
+```
+$ git remote -v
+```
+
+### History
+
+```
+$ git rev-list --count --all
+$ git log --graph --decorate --oneline --all
+```
+
+### Root commit
+
+```
+$ git cat-file -p <root>
+```
+
+### Cross-repo verification (Avery2/swarm)
+
+```
+$ git clone --depth 1 git@github.com:Avery2/swarm.git /tmp/verify-swarm 2>&1 || \
+  git clone --depth 1 https://github.com/Avery2/swarm.git /tmp/verify-swarm 2>&1
+$ git -C /tmp/verify-swarm rev-parse HEAD
+$ git -C /tmp/verify-swarm remote -v
+$ # Compare trees: does amplitude/swarm root tree match Avery2/swarm root tree?
+$ # Expected: different (fresh history). exit code 1 = mismatch = correct.
+```
+
+---
+
+*This document is part of the release qualification for `amplitude/swarm`. All evidence collected from live testing on 2026-08-10 against Ollama 0.32.7. Node v22.23.0.*

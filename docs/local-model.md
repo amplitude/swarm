@@ -39,10 +39,18 @@ If the primary model (qwen2.5-coder:0.5b) fails to load, the app **automatically
 
 | Eligible (triggers fallback) | NOT eligible (error propagates) |
 |------------------------------|----------------------------------|
-| Connection refused (Ollama unreachable) | User cancellation (AbortError) |
-| Model not found (HTTP 404) | Auth/config errors (HTTP 401/403) |
-| Incompatible model (HTTP 400) | JSON parse / arbitrary errors |
-| Server errors (HTTP 500) | — |
+| Model-not-found (exact pattern match) | Network connection failure (ECONNREFUSED, Ollama unreachable) |
+| Manifest-not-found (exact pattern match) | Auth/config errors (HTTP 401/403) |
+| Unsupported architecture | User cancellation (AbortError) |
+| App capability-check failure | Generic 5xx (HTTP 500, 502, 503) |
+| — | Rate limiting (HTTP 429) |
+| — | Malformed output / JSON parse errors |
+| — | Arbitrary generation failures |
+
+**Important:** The same Ollama endpoint being unreachable **never** triggers fallback.
+Network failures and server errors propagate the original error rather than attempting
+a larger model. Fallback only occurs for clearly model-specific signals where trying
+the configured fallback can genuinely help.
 
 The app surfaces which model is active and why fallback occurred via `getFallbackInfo()`. If you explicitly set a model via localStorage or env var, that choice takes priority and the fallback chain respects it.
 

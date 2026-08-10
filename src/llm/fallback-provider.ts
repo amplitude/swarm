@@ -7,7 +7,8 @@ import { OllamaProvider } from './ollama-provider';
 
 /**
  * Error categories for fallback decisions.
- * Only LOAD and MODEL errors trigger auto-fallback.
+ * Only MODEL errors trigger auto-fallback.
+ * 'load' is classified but NOT eligible (network failures should never escalate to a larger model).
  */
 export type FallbackErrorType = 'load' | 'model' | 'cancel' | 'auth' | 'generation' | 'unknown';
 
@@ -55,11 +56,17 @@ function extractInnerMessage(error: Error): string {
 /**
  * Classify an error thrown during provider.load() for fallback eligibility.
  *
- * Eligible: model-unavailable, connection refused, load failures (HTTP 400/404/500 from Ollama),
- *   model-compatibility errors (e.g. "model requires more memory", "no such model").
+ * Eligible (triggers fallback): clearly model-specific absence/unsupported/incompatibility signals
+ *   where trying the configured fallback can genuinely help:
+ *   - exact model-not-found (e.g. 'model "foo" not found')
+ *   - manifest-not-found (e.g. 'manifest for model "foo" not found')
+ *   - unsupported-architecture (e.g. 'unsupported architecture')
+ *   - app capability-check failure (e.g. 'capability check failed')
  *
  * NOT eligible: AbortError (user cancellation), HTTP 401/403 (auth/config issues),
- *   JSON parse errors, or arbitrary generation errors that could duplicate side effects.
+ *   network connection failure (ECONNREFUSED, fetch failed, Ollama unreachable),
+ *   rate limiting, generic 5xx, JSON parse errors, or arbitrary generation errors
+ *   that could duplicate side effects.
  */
 export function classifyLoadError(error: unknown): FallbackErrorType {
   if (error instanceof Error) {
@@ -90,7 +97,8 @@ export function classifyLoadError(error: unknown): FallbackErrorType {
       return 'auth';
     }
 
-    // Connection / availability failures (eligible — Ollama not running or unreachable)
+    // Connection / availability failures (NOT eligible — network failures should never
+    // escalate to a larger model). Classified as 'load' for diagnostics only.
     if (
       inner.includes('ECONNREFUSED') ||
       inner.includes('fetch failed') ||
@@ -101,15 +109,18 @@ export function classifyLoadError(error: unknown): FallbackErrorType {
       return 'load';
     }
 
-    // Model not found / load failures (eligible)
+    // Model-specific absence / unsupported / incompatibility signals (eligible).
+    // Only exact patterns where trying the configured fallback can genuinely help.
     if (
-      inner.includes('model') ||
-      inner.includes('not found') ||
-      inner.includes('not supported') ||
-      inner.includes('does not support') ||
-      inner.includes('requires more') ||
-      inner.includes('no such model') ||
-      inner.match(/Ollama API error \(HTTP (?:400|404|500|502|503)\)/)
+      inner.match(/model \"[^\"]+\" not found/) ||
+      inner.match(/model '[^']+' not found/) ||
+      inner.match(/model .+ not found locally/) ||
+      inner.includes('manifest') && inner.includes('not found') ||
+      inner.includes('unsupported architecture') ||
+      inner.includes('architecture not supported') ||
+      inner.includes('capability check') ||
+      inner.includes('capability-check') ||
+      inner.includes('no such model')
     ) {
       return 'model';
     }
@@ -199,7 +210,9 @@ export class FallbackProvider implements LLMProvider {
       return;
     } catch (err) {
       const errorType = classifyLoadError(err);
-      const isEligible = errorType === 'load' || errorType === 'model';
+      // Only MODEL errors trigger fallback — network failures ('load'), auth,
+      // cancellation, and unknown errors never escalate to a larger model.
+      const isEligible = errorType === 'model';
 
       // Determine fallback model ID
       const fallbackId = this.getFallbackModelId(modelId);

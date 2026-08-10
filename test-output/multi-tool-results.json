@@ -1,0 +1,415 @@
+{
+  "timestamp": "2026-08-10T21:56:29.849Z",
+  "endpoint": "http://localhost:11434",
+  "results": {
+    "ollama/qwen2.5-coder:0.5b": {
+      "model": "qwen2.5-coder:0.5b",
+      "status": "complete",
+      "toolCalls": [
+        {
+          "tool": "get_weather",
+          "args": {
+            "location": "Tokyo",
+            "unit": "celsius"
+          },
+          "result": {
+            "location": "Tokyo",
+            "temperature": 22,
+            "unit": "celsius",
+            "conditions": "partly cloudy",
+            "humidity": "55%",
+            "timestamp": "2026-08-10T21:56:28.169Z"
+          },
+          "source": "text"
+        },
+        {
+          "tool": "calculator",
+          "args": {
+            "expression": "15 * 37"
+          },
+          "result": {
+            "expression": "15 * 37",
+            "result": 555
+          },
+          "source": "text"
+        },
+        {
+          "tool": "calculator",
+          "args": {
+            "expression": "15 * 37"
+          },
+          "result": {
+            "expression": "15 * 37",
+            "result": 555
+          },
+          "source": "text"
+        },
+        {
+          "tool": "calculator",
+          "args": {
+            "expression": "15 * 37"
+          },
+          "result": {
+            "expression": "15 * 37",
+            "result": 555
+          },
+          "source": "text"
+        }
+      ],
+      "toolsUsed": [
+        "get_weather",
+        "calculator"
+      ],
+      "finalSummary": "The weather in Tokyo is currently 22 degrees Celsius, with a humidity of 55%. Calculating 15 times 37 gives us 555.",
+      "steps": [
+        {
+          "step": "round-1",
+          "messages": [
+            {
+              "role": "user"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:0.5b",
+            "created_at": "2026-08-10T21:56:28.168359Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n  \"name\": \"get_weather\",\n  \"arguments\": {\n    \"location\": \"Tokyo\",\n    \"unit\": \"celsius\"\n  }\n}\n{\n  \"name\": \"calculator\",\n  \"arguments\": {\n    \"expression\": \"15 * 37\"\n  }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 351352583,
+            "load_duration": 100352667,
+            "prompt_eval_count": 262,
+            "prompt_eval_duration": 13820000,
+            "eval_count": 66,
+            "eval_duration": 234488000
+          }
+        },
+        {
+          "step": "round-2",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:0.5b",
+            "created_at": "2026-08-10T21:56:28.375848Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n  \"name\": \"calculator\",\n  \"arguments\": {\n    \"expression\": \"15 * 37\"\n  }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 203545625,
+            "load_duration": 82053791,
+            "prompt_eval_count": 429,
+            "prompt_eval_duration": 23721000,
+            "eval_count": 33,
+            "eval_duration": 95647000
+          }
+        },
+        {
+          "step": "round-3",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:0.5b",
+            "created_at": "2026-08-10T21:56:28.582739Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n  \"name\": \"calculator\",\n  \"arguments\": {\n    \"expression\": \"15 * 37\"\n  }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 204237792,
+            "load_duration": 82248125,
+            "prompt_eval_count": 495,
+            "prompt_eval_duration": 21349000,
+            "eval_count": 33,
+            "eval_duration": 98422000
+          }
+        },
+        {
+          "step": "final-summary",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "user"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:0.5b",
+            "created_at": "2026-08-10T21:56:28.791167Z",
+            "message": {
+              "role": "assistant",
+              "content": "The weather in Tokyo is currently 22 degrees Celsius, with a humidity of 55%. Calculating 15 times 37 gives us 555."
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 206209250,
+            "load_duration": 82851916,
+            "prompt_eval_count": 590,
+            "prompt_eval_duration": 12274000,
+            "eval_count": 37,
+            "eval_duration": 108630000
+          },
+          "summary": "The weather in Tokyo is currently 22 degrees Celsius, with a humidity of 55%. Calculating 15 times 37 gives us 555."
+        }
+      ]
+    },
+    "ollama/qwen2.5-coder:1.5b": {
+      "model": "qwen2.5-coder:1.5b",
+      "status": "complete",
+      "toolCalls": [
+        {
+          "tool": "get_weather",
+          "args": {
+            "location": "Tokyo",
+            "unit": "celsius"
+          },
+          "result": {
+            "location": "Tokyo",
+            "temperature": 22,
+            "unit": "celsius",
+            "conditions": "partly cloudy",
+            "humidity": "55%",
+            "timestamp": "2026-08-10T21:56:29.060Z"
+          },
+          "source": "text"
+        },
+        {
+          "tool": "calculator",
+          "args": {
+            "expression": "15 * 37"
+          },
+          "result": {
+            "expression": "15 * 37",
+            "result": 555
+          },
+          "source": "text"
+        },
+        {
+          "tool": "calculator",
+          "args": {
+            "expression": "2 + 2"
+          },
+          "result": {
+            "expression": "2 + 2",
+            "result": 4
+          },
+          "source": "text"
+        }
+      ],
+      "toolsUsed": [
+        "get_weather",
+        "calculator"
+      ],
+      "finalSummary": "The current weather in Tokyo is partly cloudy with a temperature of 22 degrees Celsius. Additionally, 15 multiplied by 37 equals 555.",
+      "steps": [
+        {
+          "step": "round-1",
+          "messages": [
+            {
+              "role": "user"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:1.5b",
+            "created_at": "2026-08-10T21:56:29.059461Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n    \"name\": \"get_weather\",\n    \"arguments\": {\n        \"location\": \"Tokyo\",\n        \"unit\": \"celsius\"\n    }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 265739709,
+            "load_duration": 83227875,
+            "prompt_eval_count": 262,
+            "prompt_eval_duration": 14477000,
+            "eval_count": 38,
+            "eval_duration": 166273000
+          }
+        },
+        {
+          "step": "round-2",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:1.5b",
+            "created_at": "2026-08-10T21:56:29.328451Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n    \"name\": \"calculator\",\n    \"arguments\": {\n        \"expression\": \"15 * 37\"\n    }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 266644208,
+            "load_duration": 82653375,
+            "prompt_eval_count": 372,
+            "prompt_eval_duration": 43496000,
+            "eval_count": 33,
+            "eval_duration": 138412000
+          }
+        },
+        {
+          "step": "round-3",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:1.5b",
+            "created_at": "2026-08-10T21:56:29.584952Z",
+            "message": {
+              "role": "assistant",
+              "content": "```json\n{\n    \"name\": \"calculator\",\n    \"arguments\": {\n        \"expression\": \"2 + 2\"\n    }\n}\n```"
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 254359458,
+            "load_duration": 82962042,
+            "prompt_eval_count": 438,
+            "prompt_eval_duration": 41145000,
+            "eval_count": 31,
+            "eval_duration": 128175999
+          }
+        },
+        {
+          "step": "final-summary",
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "get_weather"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool",
+              "tool": "calculator"
+            },
+            {
+              "role": "user"
+            }
+          ],
+          "response": {
+            "model": "qwen2.5-coder:1.5b",
+            "created_at": "2026-08-10T21:56:29.848344Z",
+            "message": {
+              "role": "assistant",
+              "content": "The current weather in Tokyo is partly cloudy with a temperature of 22 degrees Celsius. Additionally, 15 multiplied by 37 equals 555."
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 260748459,
+            "load_duration": 83338292,
+            "prompt_eval_count": 527,
+            "prompt_eval_duration": 27381000,
+            "eval_count": 35,
+            "eval_duration": 147436000
+          },
+          "summary": "The current weather in Tokyo is partly cloudy with a temperature of 22 degrees Celsius. Additionally, 15 multiplied by 37 equals 555."
+        }
+      ]
+    }
+  }
+}

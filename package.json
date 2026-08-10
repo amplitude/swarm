@@ -1,0 +1,54 @@
+{
+  "name": "swarm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
+    "@mlc-ai/web-llm": "^0.2.78",
+    "@monaco-editor/react": "^4.7.0",
+    "dexie": "^4.0.11",
+    "lucide-react": "^0.474.0",
+    "mermaid": "^11.4.1",
+    "nanoid": "^5.1.2",
+    "quickjs-emscripten": "^0.32.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.3",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.0",
+    "zustand": "^5.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"],
+    "overrides": {
+      "serialize-javascript": ">=7.0.3",
+      "dompurify": ">=3.3.2",
+      "mermaid@>=10.9.0-rc.1 <10.9.4": ">=10.9.4",
+      "nanoid@<3.3.8": ">=3.3.8",
+      "nanoid@>=4.0.0 <5.0.9": ">=5.0.9"
+    }
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.0.1",
+    "tailwindcss": "^4.1.3",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~5.7.2",
+    "vite": "^6.2.0",
+    "vite-plugin-pwa": "^0.21.2",
+    "vitest": "^4.1.0"
+  }
+}

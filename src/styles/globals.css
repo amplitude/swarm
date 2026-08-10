@@ -1,0 +1,119 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SWARM Design System — Global Styles
+   Dark mode default. Light mode via .light class on <html>.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── CSS Custom Properties ─────────────────────────────────────────── */
+
+:root {
+  --surface: #1a1a2e;
+  --surface-raised: #222234;
+  --surface-overlay: #2a2a3c;
+  --surface-inset: #12121f;
+
+  --border: #3d3d55;
+  --border-subtle: #2a2a3c;
+  --border-strong: #55556a;
+
+  --text-primary: #ebebef;
+  --text-secondary: #b0b0be;
+  --text-tertiary: #6e6e82;
+  --text-inverse: #12121f;
+
+  --ring: #5570f7;
+  --ring-offset: #1a1a2e;
+
+  --scrollbar-thumb: #3d3d55;
+  --scrollbar-track: transparent;
+}
+
+.light {
+  --surface: #ffffff;
+  --surface-raised: #f7f7f8;
+  --surface-overlay: #ffffff;
+  --surface-inset: #ebebef;
+
+  --border: #d4d4dc;
+  --border-subtle: #ebebef;
+  --border-strong: #b0b0be;
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #55556a;
+  --text-tertiary: #8b8b9e;
+  --text-inverse: #f7f7f8;
+
+  --ring: #4050eb;
+  --ring-offset: #ffffff;
+
+  --scrollbar-thumb: #d4d4dc;
+  --scrollbar-track: transparent;
+}
+
+/* ── Base Layer ────────────────────────────────────────────────────── */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border-subtle);
+  }
+
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-surface text-text-primary font-sans text-base;
+    min-height: 100dvh;
+  }
+
+  ::selection {
+    @apply bg-primary-600/30 text-text-primary;
+  }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
+}
+
+/* ── Thinking shimmer (needs custom gradient) ──────────────────────── */
+
+@layer components {
+  .thinking-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--surface-raised) 0%,
+      var(--surface-overlay) 50%,
+      var(--surface-raised) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-thinking;
+  }
+}
+

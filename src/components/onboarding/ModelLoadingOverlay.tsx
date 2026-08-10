@@ -189,7 +189,7 @@ export function ModelLoadingOverlay({
                 <div className="mt-2 flex items-start gap-2 rounded bg-surface-raised p-2 text-2xs text-text-secondary">
                   <span className="shrink-0 mt-0.5">&#9432;</span>
                   <span>
-                    Pull the model: <code className="rounded bg-surface-overlay px-1 text-primary-300">ollama pull qwen2.5-coder:0.5b</code>
+                    Pull the model: <code className="rounded bg-surface-overlay px-1 text-primary-300">ollama pull smollm2:135m</code>
                   </span>
                 </div>
               </div>
@@ -335,7 +335,7 @@ export function ModelLoadingOverlay({
                 <ol className="mt-1 ml-4 list-decimal space-y-1 text-2xs">
                   <li>Ensure Ollama is installed: <code className="rounded bg-surface-overlay px-1">brew install ollama</code></li>
                   <li>Start Ollama: <code className="rounded bg-surface-overlay px-1">ollama serve</code></li>
-                  <li>Pull the model: <code className="rounded bg-surface-overlay px-1">ollama pull qwen2.5-coder:0.5b</code></li>
+                  <li>Pull the model: <code className="rounded bg-surface-overlay px-1">ollama pull smollm2:135m</code></li>
                   <li>Check endpoint: <code className="rounded bg-surface-overlay px-1">curl http://localhost:11434/api/tags</code></li>
                 </ol>
               </div>

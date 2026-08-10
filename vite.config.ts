@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
 export default defineConfig({
-  base: '/swarm/',
+  base: '/',
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),
   },
@@ -34,8 +34,8 @@ export default defineConfig({
         description: 'Template for building local-first agent apps; no paid inference API required',
         theme_color: '#0f172a',
         icons: [
-          { src: '/swarm/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/swarm/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
     }),

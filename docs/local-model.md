@@ -1,12 +1,12 @@
 # Local Model Setup
 
-Swarm supports two local inference runtimes. **Ollama is the default** — it's faster, uses tiny models (<=1.5B parameters, all verified with live smoke tests), and works in any browser. WebLLM is an expert option for when you can't or don't want to run a separate process — all WebLLM models are >1.5B and require explicit user selection.
+Swarm supports two local inference runtimes. **Ollama is the default** — it's faster, uses tiny models (<=0.5B automatic, with smollm2:135m as the absolute smallest default), and works in any browser. WebLLM is an expert option for when you can't or don't want to run a separate process — all WebLLM models are >1.5B and require explicit user selection.
 
 ---
 
 ## Option 1: Ollama (Recommended)
 
-[Ollama](https://ollama.com) runs a local inference service via a REST API. Models range from ~397 MB to ~1.3 GB — much smaller than WebLLM models.
+[Ollama](https://ollama.com) runs a local inference service via a REST API. Default models are ~96–397 MB.
 
 ### Installation
 
@@ -25,17 +25,17 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 
 | Model | Size (measured live) | Notes |
 |-------|---------------------|-------|
-| `qwen2.5-coder:0.5b` | 397 MB | Fastest capable coder model. Default. Live-tested 2026-08-10 (Q4_K_M, 494M params, Ollama v0.32.7). |
+| `smollm2:135m` | ~96 MB | **Smallest practical Ollama model.** Intentionally dumb — produces low-quality output, struggles with tool calls. Default for instant startup. |
 
 Pull it:
 
 ```bash
-ollama pull qwen2.5-coder:0.5b
+ollama pull smollm2:135m
 ```
 
 ### Automatic Fallback Chain
 
-If the primary model (qwen2.5-coder:0.5b) fails to load, the app **automatically escalates** to qwen2.5-coder:1.5b. The fallback triggers only for eligible failures:
+If the primary model (smollm2:135m) fails to load, the app **automatically escalates** to qwen2.5-coder:0.5b. **There is no automatic 1.5B path.** The fallback triggers only for eligible failures:
 
 | Eligible (triggers fallback) | NOT eligible (error propagates) |
 |------------------------------|----------------------------------|
@@ -56,13 +56,14 @@ The app surfaces which model is active and why fallback occurred via `getFallbac
 
 See `src/llm/fallback-provider.ts` for implementation and tests.
 
-### Other Recommended Models
+### Other Available Models (manual selection only)
 
 | Model | Size (measured live) | Notes |
 |-------|---------------------|-------|
-| `qwen2.5-coder:1.5b` | 986 MB | Better reasoning than 0.5B. Good balance (live-tested, Q4_K_M, 1.5B params). |
-| `llama3.2:1b` | 1.3 GB | Meta's smallest instruct model (Q8_0 quantization; larger disk than Q4 variants). |
-| `qwen2.5:0.5b` | 397 MB | Smallest general purpose model (live-tested, Q4_K_M, 494M params). |
+| `qwen2.5-coder:0.5b` | 397 MB | Smallest capable coder. Fast fallback from smollm2:135m. |
+| `qwen2.5:0.5b` | 397 MB | Smallest general model. |
+| `qwen2.5-coder:1.5b` | 986 MB | Better reasoning, manual selection required. Not auto-selected. |
+| `llama3.2:1b` | 1.3 GB | Meta's smallest instruct model, manual selection required. |
 
 ### Switching Models
 
@@ -70,13 +71,13 @@ At runtime, set localStorage:
 
 ```js
 // In browser console:
-localStorage.setItem('swarm-model-id', 'ollama/llama3.2:1b');
+localStorage.setItem('swarm-model-id', 'ollama/qwen2.5-coder:0.5b');
 ```
 
 Or via Vite env (restart required):
 
 ```bash
-VITE_LLM_MODEL=ollama/llama3.2:1b pnpm dev
+VITE_LLM_MODEL=ollama/qwen2.5-coder:0.5b pnpm dev
 ```
 
 ### Custom Ollama Endpoint
@@ -103,12 +104,12 @@ localStorage.removeItem('swarm-last-model');
 - If using Docker, ensure port 11434 is exposed
 
 **"Model not found"**
-- Pull the model: `ollama pull qwen2.5-coder:0.5b`
+- Pull the model: `ollama pull smollm2:135m`
 - Verify it's available: `ollama list`
 
 **Slow responses**
-- Try a smaller model: `ollama/qwen2.5:0.5b` (397 MB)
-- Check system resources: Ollama runs on CPU by default, GPU acceleration may help
+- SmolLM2 135M should respond near-instantly. If not, check system resources.
+- Try a lighter variant or check that Ollama isn't overloaded with other models
 
 ---
 
@@ -131,7 +132,7 @@ WebLLM runs models directly in the browser using WebGPU. No separate process nee
 | `Qwen3-4B-q4f16_1-MLC` | ~3 GB | Lightweight and capable. Recommended for WebLLM. |
 | `Qwen3-8B-q4f16_1-MLC` | ~5 GB | Best for agents but requires more resources. |
 
-> Phi-3.5 Mini Instruct (3.8B, ~2 GB) is no longer listed as a default — all automatic defaults are <=1.5B. It remains available via explicit model configuration.
+> Phi-3.5 Mini Instruct (3.8B, ~2 GB) is not listed as a default. It remains available via explicit model configuration.
 
 ### Switching to WebLLM
 
@@ -158,7 +159,7 @@ All configuration is optional. Defaults work for local usage with Ollama.
 |----------|---------|-------------|
 | `VITE_LLM_PROVIDER` | `ollama` | `ollama` or `webllm` |
 | `VITE_OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama server URL |
-| `VITE_LLM_MODEL` | `ollama/qwen2.5-coder:0.5b` | Model identifier (Ollama <=1.5B default; WebLLM >1.5B, no default) |
+| `VITE_LLM_MODEL` | `ollama/smollm2:135m` | Model identifier (Ollama <=0.5B default; WebLLM >1.5B, no default) |
 
 ### localStorage Keys
 
@@ -173,7 +174,7 @@ All configuration is optional. Defaults work for local usage with Ollama.
 
 ### Provider IDs
 
-Ollama: `ollama/<name>`, e.g. `ollama/qwen2.5-coder:0.5b`
+Ollama: `ollama/<name>`, e.g. `ollama/smollm2:135m`
 WebLLM: MLC model ID, e.g. `Qwen3-4B-q4f16_1-MLC`
 
 ---
@@ -181,11 +182,11 @@ WebLLM: MLC model ID, e.g. `Qwen3-4B-q4f16_1-MLC`
 ## Honest Limitations
 
 - **Ollama requires a local inference service** — it's not "in-browser" inference. You need Ollama installed and running on your machine (or a reachable network host).
-- **Small models have limited reasoning** — 0.5B parameter models may struggle with complex multi-step tasks. Live testing confirms basic JSON tool calling works but complex chains may fail.
+- **Small models have very limited reasoning** — The default 135M model produces unreliable, low-quality output. It cannot reliably format tool calls. Even the 0.5B fallback may struggle with complex multi-step tasks.
 - **WebLLM requires WebGPU** — not available in Firefox or Safari. The app will show a warning banner.
-- **No tool-calling guarantees** — Tool calling is text-based (JSON parsing from output). It works well with most models but is not as reliable as native function calling.
+- **No tool-calling guarantees** — Tool calling is text-based (JSON parsing from output). It works marginally with 0.5B models but the 135M default has `toolCallFormat: 'none'` and cannot perform tool calls.
 - **No cloud inference** — There is no hosted backend or cloud model option. If you want one, configure an Ollama endpoint pointing at a remote server.
-- **Tool calling with 0.5B models** — The smallest models may not reliably format tool calls. Live testing confirms basic JSON tool calling works. If you encounter issues, try `ollama/qwen2.5-coder:1.5b` (986 MB, 1.5B params).
+- **135M model is intentionally low-quality** — It exists solely for instant startup. For any real work, manually select a 0.5B+ model.
 
 ---
 
@@ -199,7 +200,7 @@ curl http://localhost:11434/api/tags
 # Expected: {"models": [...]} with your pulled models listed
 
 # Check a specific model (example)
-curl http://localhost:11434/api/generate -d '{"model":"qwen2.5-coder:0.5b","prompt":"hello","stream":false}'
+curl http://localhost:11434/api/generate -d '{"model":"smollm2:135m","prompt":"hello","stream":false}'
 # Expected: {"response": "Hello! ..."}
 ```
 

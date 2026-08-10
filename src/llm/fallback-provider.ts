@@ -138,9 +138,9 @@ export function classifyLoadError(error: unknown): FallbackErrorType {
  * A provider wrapper that implements automatic fallback between two Ollama models.
  *
  * Strategy:
- * - Try primary model (default: qwen2.5-coder:0.5b) first.
- * - On eligible load failures (connection refused, model not found, load errors)
- *   attempt fallback model (default: qwen2.5-coder:1.5b).
+ * - Try primary model (default: smollm2:135m) first.
+ * - On eligible load failures (model not found, manifest errors, etc.)
+ *   attempt fallback model (default: qwen2.5-coder:0.5b).
  * - Does NOT fallback on user cancellation (AbortError), auth errors (401/403),
  *   or arbitrary generation errors (which could duplicate side effects).
  * - Surface which model is active and why fallback occurred.
@@ -149,8 +149,8 @@ export function classifyLoadError(error: unknown): FallbackErrorType {
  *
  * Usage:
  *   const chain = new FallbackProvider();
- *   await chain.load('ollama/qwen2.5-coder:0.5b', onProgress);
- *   // if 0.5b fails with eligible error, 1.5b is tried automatically
+ *   await chain.load('ollama/smollm2:135m', onProgress);
+ *   // if 135m fails with eligible error, 0.5b is tried automatically
  *   for await (const chunk of chain.generate(request)) { ... }
  */
 export class FallbackProvider implements LLMProvider {
@@ -188,8 +188,8 @@ export class FallbackProvider implements LLMProvider {
    * available — because the simulated error emits the specific string that
    * classifyLoadError recognizes as eligible.
    *
-   * A deliberately simulated eligible signal — when 0.5B may otherwise pass the
-   * capability check in production, this lets tests prove the full 0.5B→1.5B
+   * A deliberately simulated eligible signal — when 135m may otherwise pass the
+   * capability check in production, this lets tests prove the full 135m→0.5B
    * transition works end-to-end.
    */
   /**

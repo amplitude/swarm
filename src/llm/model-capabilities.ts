@@ -62,6 +62,12 @@ const MLC_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
 // ---------------------------------------------------------------------------
 
 const OLLAMA_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
+  'smollm2:135m': {
+    supportsNativeFunctionCalling: false,
+    supportsSystemPromptWithTools: false,
+    maxContextTokens: 2048,
+    toolCallFormat: 'none',
+  },
   'qwen2.5-coder:0.5b': {
     supportsNativeFunctionCalling: false,
     supportsSystemPromptWithTools: true,

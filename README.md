@@ -120,7 +120,7 @@ Add or remove tools in `src/tools/definitions.ts`. Each tool defines its functio
 
 ## Local-model fallback chain
 
-The app auto-selects a small model (0.5B) on first run. If that model fails to load (model not found, unsupported architecture, capability check failure), it escalates to the next larger model (1.5B).
+The app auto-selects the absolute smallest model (`smollm2:135m`, ~96 MB) on first run. If that model fails to load (model not found, unsupported architecture, capability check failure), it escalates to `qwen2.5-coder:0.5b` (397 MB).
 
 **This only escalates for model-specific failures.** Network errors, auth failures, user cancellation, or generic generation errors never trigger fallback.
 
@@ -128,10 +128,11 @@ Fallback map (from `src/llm/model-constants.ts`):
 
 | Primary | Fallback |
 |---------|----------|
-| qwen2.5-coder:0.5b (397 MB) | qwen2.5-coder:1.5b (986 MB) |
-| qwen2.5:0.5b (397 MB) | qwen2.5:1.5b |
+| smollm2:135m (~96 MB) | qwen2.5-coder:0.5b (397 MB) |
 
-To disable fallback, set a specific model ID (any size) via environment variable or localStorage — this bypasses the fallback chain entirely.
+There is **no automatic 1.5B path**. 1.5B+ models require explicit user selection.
+
+To disable fallback, set a specific model ID via environment variable or localStorage — this bypasses the fallback chain entirely.
 
 ---
 
@@ -187,7 +188,7 @@ pnpm build
 |---------------------|---------|-------------|
 | `VITE_LLM_PROVIDER` | `ollama` | Inference provider: `ollama` or `webllm` |
 | `VITE_OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama server URL |
-| `VITE_LLM_MODEL` | `ollama/qwen2.5-coder:0.5b` | Model ID (<=1.5B; WebLLM >1.5B requires explicit ID) |
+| `VITE_LLM_MODEL` | `ollama/smollm2:135m` | Model ID (<=0.5B auto; WebLLM >1.5B requires explicit ID) |
 
 Runtime settings (localStorage):
 - `swarm-provider` — `"ollama"` or `"webllm"`
@@ -202,7 +203,7 @@ See [docs/local-model.md](docs/local-model.md) for detailed configuration.
 
 - **Default (Ollama):** [Ollama](https://ollama.com) local service, any modern browser
 - **WebLLM (expert):** Chrome 113+, Edge 113+, or WebGPU-enabled browser
-- ~400 MB–5 GB disk/storage depending on model
+- ~96 MB–5 GB disk/storage depending on model
 
 ---
 

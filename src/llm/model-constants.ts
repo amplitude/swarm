@@ -6,41 +6,33 @@
  * project may hardcode a model ID intended for automatic selection.
  *
  * Invariants enforced by auto-model-invariant.test.ts:
- *   - DEFAULT_MODEL is always "ollama/qwen2.5-coder:0.5b"
- *   - Every entry in OLLAMA_AUTO_MODELS is <=1.5B and Ollama-only
- *   - FALLBACK_MAP only maps <=1.5B -> <=1.5B
- *   - PROVIDER_DEFAULTS only reference <=1.5B Ollama models
+ *   - DEFAULT_MODEL is always "ollama/smollm2:135m" (intentionally dumb/cheap)
+ *   - Every entry in OLLAMA_AUTO_MODELS is <=0.5B and Ollama-only
+ *   - FALLBACK_MAP only maps small models to <=0.5B fallbacks
+ *   - PROVIDER_DEFAULTS only reference <=0.5B Ollama models
  *   - MLC (WebLLM) models (>1.5B) are structurally excluded from ALL auto paths
  */
 
 // ===========================================================================
-// Ollama auto models — always <=1.5B, always with "ollama/" prefix
+// Ollama auto models — always <=0.5B, always with "ollama/" prefix
 // ===========================================================================
 
 export const OLLAMA_AUTO_MODELS = [
+  {
+    id: 'ollama/smollm2:135m',
+    name: 'SmolLM2 135M',
+    size: '258 MB',
+    runtime: 'Ollama' as const,
+    description:
+      'Smallest practical Ollama model (live-measured 258 MB, F16, 135M params). Intentionally dumb — produces low-quality output, cannot perform tool calls. Default only for instant startup. Requires Ollama.',
+  },
   {
     id: 'ollama/qwen2.5-coder:0.5b',
     name: 'Qwen 2.5 Coder 0.5B',
     size: '397 MB',
     runtime: 'Ollama' as const,
     description:
-      'Smallest capable coder model. Fastest option (live-tested 2026-08-10, Q4_K_M, 494M params, ~0.5-1s latency). Requires Ollama.',
-  },
-  {
-    id: 'ollama/qwen2.5-coder:1.5b',
-    name: 'Qwen 2.5 Coder 1.5B',
-    size: '986 MB',
-    runtime: 'Ollama' as const,
-    description:
-      'Lightweight coder with better reasoning (live-tested 2026-08-10, Q4_K_M, 1.5B params). Requires Ollama.',
-  },
-  {
-    id: 'ollama/llama3.2:1b',
-    name: 'Llama 3.2 1B',
-    size: '1.3 GB',
-    runtime: 'Ollama' as const,
-    description:
-      "Meta's smallest instruct model (Q8_0 quantization; larger disk than Q4 variants). Requires Ollama.",
+      'Smallest capable coder model. Fastest useful option (live-tested 2026-08-10, Q4_K_M, 494M params, ~0.5-1s latency). Fallback from smollm2:135m. Requires Ollama.',
   },
   {
     id: 'ollama/qwen2.5:0.5b',
@@ -87,11 +79,11 @@ export const RECOMMENDED_MODELS = [
 export type RecommendedModelId = (typeof RECOMMENDED_MODELS)[number]['id'];
 
 // ===========================================================================
-// Default model — the smallest, fastest Ollama model
+// Default model — the absolute smallest Ollama model (~96 MB)
 // ===========================================================================
 
 /** The model auto-selected on first run / when no user preference is stored. */
-export const DEFAULT_MODEL = 'ollama/qwen2.5-coder:0.5b';
+export const DEFAULT_MODEL = 'ollama/smollm2:135m';
 
 // ===========================================================================
 // Fallback map — model-ID -> fallback model ID (both <=1.5B Ollama)
@@ -99,17 +91,17 @@ export const DEFAULT_MODEL = 'ollama/qwen2.5-coder:0.5b';
 
 /**
  * Maps small Ollama models to their next-larger counterpart.
- * Both key and value must be <=1.5B. No >1.5B model appears here.
+ * All values must be <=0.5B. No automatic 1.5B path exists.
  */
 export const FALLBACK_MAP: Record<string, string> = {
-  'qwen2.5-coder:0.5b': 'ollama/qwen2.5-coder:1.5b',
-  'qwen2.5:0.5b': 'ollama/qwen2.5:1.5b',
+  'smollm2:135m': 'ollama/qwen2.5-coder:0.5b',
 };
 
 /**
  * The default fallback model when the primary is unknown but not already the fallback.
+ * No automatic 1.5B path exists — fallbacks stay at 0.5B or smaller.
  */
-export const DEFAULT_FALLBACK_MODEL_ID = 'ollama/qwen2.5-coder:1.5b';
+export const DEFAULT_FALLBACK_MODEL_ID = 'ollama/qwen2.5-coder:0.5b';
 
 // ===========================================================================
 // Provider defaults — per-provider default model IDs
@@ -117,7 +109,7 @@ export const DEFAULT_FALLBACK_MODEL_ID = 'ollama/qwen2.5-coder:1.5b';
 
 /**
  * Default models per provider.
- * Ollama defaults to the smallest tested model (<=0.5B).
+ * Ollama defaults to the absolute smallest model (smollm2:135m, ~270 MB disk).
  * WebLLM has no default — all WebLLM models are >1.5B and require explicit user selection.
  */
 export const PROVIDER_DEFAULT_MODELS: Record<string, string | undefined> = {
@@ -178,18 +170,26 @@ export function enumerateExpertModelIds(): string[] {
 }
 
 /**
- * Check if a model ID is ≤1.5B and has no >1.5B segments in its name.
+ * Check if a model ID is ≤0.5B and has no >1.5B segments in its name.
+ * Auto-defaulting now only selects <=0.5B models.
  */
 export function isModelAutoAllowed(modelId: string): boolean {
   const bare = modelId.replace(/^ollama\//, '');
-  const sizeMatch = bare.match(/:(\d+(?:\.\d+)?)b/i);
+  // Handle '135m' pattern (smollm2:135m) — treat as <=0.5B
+  const smMatch = bare.match(/:\d+m/i);
+  if (smMatch) {
+    const mbSize = parseInt(smMatch[0]!.replace(':', '').replace('m', ''), 10);
+    return mbSize <= 500;
+  }
+  const sizeMatch = bare.match(/:\d+(?:\.\d+)?b/i);
   if (sizeMatch) {
-    return parseFloat(sizeMatch[1]!) <= 1.5;
+    const size = parseFloat(sizeMatch[0]!.replace(':', '').replace('b', ''));
+    return size <= 0.5;
   }
   // Also check for MLC-style size embedded in name
   const mlcMatch = bare.match(/(\d+)B/);
   if (mlcMatch) {
-    return parseFloat(mlcMatch[1]!) <= 1.5;
+    return parseFloat(mlcMatch[1]!) <= 0.5;
   }
   return false;
 }

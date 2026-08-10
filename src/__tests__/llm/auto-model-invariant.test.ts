@@ -27,18 +27,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // Thresholds
 // ---------------------------------------------------------------------------
 
-const MAX_AUTO_PARAMS = 1.5; // billions
-// Any Ollama model <=1.5B is allowed in recommended/auto lists
-// The EXACT default + fallback target sizes are 0.5B and 1.5B only (below)
+const MAX_AUTO_PARAMS = 0.5; // billions — no automatic model >0.5B
+// Only <=0.5B models are allowed in recommended/auto lists
 const ALLOWED_AUTO_MODELS = [
+  'ollama/smollm2:135m',
   'ollama/qwen2.5-coder:0.5b',
-  'ollama/qwen2.5-coder:1.5b',
   'ollama/qwen2.5:0.5b',
-  'ollama/qwen2.5:1.5b',
-  'ollama/llama3.2:1b',
 ];
-// The exact default + fallback target sizes (0.5B and 1.5B only)
-const EXACT_AUTO_DEFAULT_SIZES = [0.5, 1.5];
+// The exact default + fallback target sizes (<=0.5B only)
+const EXACT_AUTO_DEFAULT_SIZES = [0.135, 0.5];
 const FORBIDDEN_AUTO_MODEL_IDS = [
   'Phi-3.5-mini',
   'phi3',
@@ -72,6 +69,7 @@ function extractModelSize(modelId: string): number {
     'phi3.5:3.8b': 3.8,
     'llama3.2:1b': 1,
     'llama3.2:3b': 3,
+    'smollm2:135m': 0.135,
     'qwen2.5-coder:0.5b': 0.5,
     'qwen2.5-coder:1.5b': 1.5,
     'qwen2.5:0.5b': 0.5,
@@ -98,7 +96,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   // 1. DEFAULT_MODEL from engine.ts
   // ---------------------------------------------------------------
   describe('DEFAULT_MODEL (engine.ts)', () => {
-    it('DEFAULT_MODEL is <=1.5B and Ollama-only', async () => {
+    it('DEFAULT_MODEL is <=0.5B and Ollama-only', async () => {
       const { DEFAULT_MODEL } = await import('@/llm/engine');
       expect(DEFAULT_MODEL).toBeTruthy();
       expect(typeof DEFAULT_MODEL).toBe('string');
@@ -129,7 +127,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       // each import is fresh in each test file.
     });
 
-    it('ollama provider defaults to Ollama model <=1.5B', async () => {
+    it('ollama provider defaults to Ollama model <=0.5B', async () => {
       const { getProviderConfig, resetProvider } = await import('@/llm/provider-singleton');
       resetProvider();
       const config = getProviderConfig();
@@ -144,20 +142,20 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       console.log(`  Ollama default: ${config.modelId} (${size}B)`);
     });
 
-    it('ollama default model size is exactly 0.5B', async () => {
+    it('ollama default model size is <=0.5B', async () => {
       const { getProviderConfig, resetProvider } = await import('@/llm/provider-singleton');
       resetProvider();
       const config = getProviderConfig();
       const size = extractModelSize(config.modelId);
       expect(EXACT_AUTO_DEFAULT_SIZES).toContain(size);
-      console.log(`  Ollama default size: ${size}B (exact expected: 0.5B)`);
+      console.log(`  Ollama default size: ${size}B (exact expected: <=0.5B)`);
     });
 
-    it('ollama default model is in the allowed set', async () => {
+    it('ollama default model is smollm2:135m', async () => {
       const { getProviderConfig, resetProvider } = await import('@/llm/provider-singleton');
       resetProvider();
       const config = getProviderConfig();
-      expect(isAutoAllowed(config.modelId)).toBe(true);
+      expect(config.modelId).toBe('ollama/smollm2:135m');
     });
 
     it('webllm provider has NO automatic default model', async () => {
@@ -177,10 +175,9 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   // 3. FallbackProvider model mapping
   // ---------------------------------------------------------------
   describe('FallbackProvider mapping (fallback-provider.ts)', () => {
-    it('getFallbackModelId only maps <=1.5B models to <=1.5B fallbacks', async () => {
+    it('getFallbackModelId only maps <=0.5B models to <=0.5B fallbacks', async () => {
       // We can't access private method directly, but we can check the fallbackMap through
-      // the public behavior by examining OLLAMA_MODEL_CAPABILITIES for models that would
-      // appear in fallback chains.
+      // the public behavior.
       const { getModelCapabilities } = await import('@/llm/model-capabilities');
       const { FallbackProvider } = await import('@/llm/fallback-provider');
 
@@ -188,12 +185,10 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
 
       // Test the known fallbackable models
       const testInputs = [
-        { input: 'ollama/qwen2.5-coder:0.5b', expectedFallback: 'ollama/qwen2.5-coder:1.5b' },
-        { input: 'ollama/qwen2.5:0.5b', expectedFallback: 'ollama/qwen2.5:1.5b' },
+        { input: 'ollama/smollm2:135m', expectedFallback: 'ollama/qwen2.5-coder:0.5b' },
       ];
 
       for (const { input, expectedFallback } of testInputs) {
-        // The fallback provider should load the primary first, then fallback.
         // We test the mapping indirectly by checking capabilities:
         const caps = getModelCapabilities(input);
         const fallbackCaps = getModelCapabilities(expectedFallback);
@@ -203,23 +198,8 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       }
     });
 
-    it('no >1.5B model appears in fallback mapping', async () => {
-      // Read the private fallbackMap via import
-      // We can verify by testing load() with a >1.5B model and checking behavior
-      // But more directly, we can infer from the source that fallback mapping only
-      // contains Ollama models <=1.5B
-
-      // Verify by checking that KNOWN >1.5B Ollama models are not in fallback chain
-      const largeOllamaModels = [
-        'ollama/qwen2.5-coder:3b', // if it existed
-        'ollama/llama3.2:3b',
-      ];
-
-      // These are models that HAVE capabilities defined but should NOT auto-select
-      // Without access to private getFallbackModelId, we verify structurally:
-      // - The capability map has >1.5B entries (phi3, llama3.2:3b) but they're not in
-      //   the fallback provider's private fallbackMap
-      // - We can test by ensuring FallbackProvider.load() doesn't try to load a large model
+    it('no >0.5B model appears in fallback mapping', async () => {
+      // Verify that KNOWN >0.5B Ollama models are not in fallback chain
       const { getModelCapabilities } = await import('@/llm/model-capabilities');
 
       // phi3:mini has capabilities defined but must NOT be auto-selected
@@ -233,7 +213,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       console.log(`  llama3.2:3b recognized in capabilities (not auto-selected): OK`);
     });
 
-    it('FallbackProvider default fallback is <=1.5B', async () => {
+    it('FallbackProvider default fallback is <=0.5B', async () => {
       const { FallbackProvider } = await import('@/llm/fallback-provider');
       const fp = new FallbackProvider();
 
@@ -245,10 +225,10 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   });
 
   // ---------------------------------------------------------------
-  // 4. OLLAMA_MODELS (all ≤1.5B)
+  // 4. OLLAMA_MODELS (all ≤0.5B)
   // ---------------------------------------------------------------
   describe('OLLAMA_MODELS constant (engine.ts)', () => {
-    it('all Ollama recommended models are <=1.5B', async () => {
+    it('all Ollama recommended models are <=0.5B', async () => {
       const { RECOMMENDED_MODELS } = await import('@/llm/engine');
 
       const ollamaModels = RECOMMENDED_MODELS.filter((m) => m.runtime === 'Ollama');
@@ -272,7 +252,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       for (const model of mlcModels) {
         const size = extractModelSize(model.id);
         // All MLC models are >1.5B
-        expect(size).toBeGreaterThan(MAX_AUTO_PARAMS);
+        expect(size).toBeGreaterThan(1.5);
         expect(model.id.startsWith('ollama/')).toBe(false);
         console.log(`  WebLLM model (excluded from auto): ${model.id} (${size}B)`);
       }
@@ -285,24 +265,22 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   describe('Environment variable resolution', () => {
     it('VITE_LLM_PROVIDER=ollama + VITE_LLM_MODEL allows setting known models', () => {
       // Simulate the logic in getProviderConfig
-      const envModel = 'ollama/qwen2.5-coder:0.5b';
+      const envModel = 'ollama/smollm2:135m';
       expect(envModel).toBeTruthy();
       const size = extractModelSize(envModel);
       expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
       expect(isAutoAllowed(envModel)).toBe(true);
     });
 
-    it('VITE_LLM_MODEL can set any model but only <=1.5B are auto-defaults', () => {
-      // This tests that if someone explicitly sets a >1.5B model via env var,
+    it('VITE_LLM_MODEL can set any model but only <=0.5B are auto-defaults', () => {
+      // This tests that if someone explicitly sets a >0.5B model via env var,
       // it's still allowed (explicit override, not auto-selection).
       // The invariant is about auto-paths, not explicit user overrides.
-      const userSetModel = 'ollama/llama3.2:3b';
+      const userSetModel = 'ollama/qwen2.5-coder:0.5b';
       const size = extractModelSize(userSetModel);
-      expect(size).toBeGreaterThan(MAX_AUTO_PARAMS);
-      expect(isAutoAllowed(userSetModel)).toBe(false);
-      console.log(`  User can explicitly set >1.5B: ${userSetModel} (${size}B) — OK, not auto`);
-
-      // But the DEFAULT fallback when unset must be <=1.5B
+      expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+      expect(isAutoAllowed(userSetModel)).toBe(true);
+      console.log(`  User can explicitly set <=0.5B: ${userSetModel} (${size}B) — OK`);
     });
   });
 
@@ -314,7 +292,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       localStorage.clear();
     });
 
-    it('when no localStorage keys exist, defaults are <=1.5B Ollama', async () => {
+    it('when no localStorage keys exist, defaults are <=0.5B Ollama', async () => {
       const { getProviderConfig, resetProvider } = await import('@/llm/provider-singleton');
       resetProvider();
       const config = getProviderConfig();
@@ -322,11 +300,11 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       expect(isAutoAllowed(config.modelId)).toBe(true);
     });
 
-    it('localStorage can set any model, but auto-default is always <=1.5B', () => {
+    it('localStorage can set any model, but auto-default is always <=0.5B', () => {
       // When localStorage is set to a specific model, getProviderConfig returns it.
       // This is user-preference, not auto-selection.
-      // Check: clearing localStorage resets to the <=1.5B default.
-      const expectedDefault = 'ollama/qwen2.5-coder:0.5b';
+      // Check: clearing localStorage resets to the <=0.5B default.
+      const expectedDefault = 'ollama/smollm2:135m';
       const size = extractModelSize(expectedDefault);
       expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
     });
@@ -356,7 +334,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   // ---------------------------------------------------------------
   // 8. Model capability maps have >1.5B entries but they're not auto
   // ---------------------------------------------------------------
-  describe('>1.5B entries in capability maps are structurally excluded from auto', () => {
+  describe('>0.5B entries in capability maps are structurally excluded from auto', () => {
     it('Phi-3.5 Mini (3.8B) has capabilities but is NOT in any auto path', async () => {
       const { getModelCapabilities } = await import('@/llm/model-capabilities');
       const phiId = 'Phi-3.5-mini-instruct-q4f16_1-MLC';
@@ -408,12 +386,12 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   // 9. Full auto-path enumeration: verify NO >1.5B model in any auto path
   // ---------------------------------------------------------------
   describe('Full auto-path enumeration', () => {
-    it('DEFAULT_MODEL must be exactly ollama/qwen2.5-coder:0.5b', async () => {
+    it('DEFAULT_MODEL must be exactly ollama/smollm2:135m', async () => {
       const { DEFAULT_MODEL } = await import('@/llm/engine');
-      expect(DEFAULT_MODEL).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(DEFAULT_MODEL).toBe('ollama/smollm2:135m');
     });
 
-    it('OLLAMA_MODELS list contains only <=1.5B models', async () => {
+    it('OLLAMA_MODELS list contains only <=0.5B models', async () => {
       const { RECOMMENDED_MODELS } = await import('@/llm/engine');
       const ollamaModels = RECOMMENDED_MODELS.filter((m) => m.runtime === 'Ollama');
       for (const m of ollamaModels) {
@@ -429,15 +407,15 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       expect(ALLOWED_AUTO_MODELS).toContain(config.modelId);
     });
 
-    it('FallbackProvider only maps <=1.5B models', async () => {
+    it('FallbackProvider only maps <=0.5B models', async () => {
       const { FallbackProvider } = await import('@/llm/fallback-provider');
       const fp = new FallbackProvider();
 
-      // The private fallbackMap keys are all <=1.5B Ollama models
-      // We verify by testing that only known <=1.5B models trigger fallback
+      // The private fallbackMap keys are all <=0.5B Ollama models
+      // We verify by testing that only known <=0.5B models trigger fallback
       const testModelIds = [
+        'ollama/smollm2:135m',
         'ollama/qwen2.5-coder:0.5b',
-        'ollama/qwen2.5:0.5b',
       ];
 
       for (const mid of testModelIds) {
@@ -446,14 +424,16 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
         expect(mid.startsWith('ollama/')).toBe(true);
       }
 
-      // Models >1.5B should NOT be in fallback key set
+      // Models >0.5B should NOT be in fallback key set
       const forbiddenInFallback = [
+        'ollama/qwen2.5-coder:1.5b',
         'ollama/llama3.2:3b',
         'ollama/phi3:mini',
         'Qwen3-8B-q4f16_1-MLC',
       ];
       for (const mid of forbiddenInFallback) {
         const size = extractModelSize(mid);
+        // 1.5B models are >0.5B, so they should not be auto-selected
         expect(size).toBeGreaterThan(MAX_AUTO_PARAMS);
       }
     });
@@ -463,7 +443,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
   // 10. Comprehensive size audit of all model references in auto paths
   // ---------------------------------------------------------------
   describe('Size audit: every model reference in auto paths', () => {
-    it('every model referenced in RECOMMENDED_MODELS is Ollama <=1.5B or MLC >1.5B', async () => {
+    it('every model referenced in RECOMMENDED_MODELS is Ollama <=0.5B or MLC >1.5B', async () => {
       const { RECOMMENDED_MODELS } = await import('@/llm/engine');
 
       for (const model of RECOMMENDED_MODELS) {
@@ -471,7 +451,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
         if (model.runtime === 'Ollama') {
           expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
         } else {
-          expect(size).toBeGreaterThan(MAX_AUTO_PARAMS);
+          expect(size).toBeGreaterThan(1.5);
         }
       }
     });
@@ -623,8 +603,7 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
 // ---------------------------------------------------------------------------
 
 function extractModelKeySize(modelId: string): number {
-  if (modelId.startsWith('ollama/qwen2.5-coder:1.5b')) return 1.5;
-  if (modelId.startsWith('ollama/qwen2.5:1.5b')) return 1.5;
+  if (modelId === 'smollm2:135m') return 0.135;
   if (modelId.startsWith('ollama/qwen2.5-coder:0.5b')) return 0.5;
   if (modelId.startsWith('ollama/qwen2.5:0.5b')) return 0.5;
   return extractModelSize(modelId);

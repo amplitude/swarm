@@ -11,10 +11,10 @@ describe('Provider configuration', () => {
     resetProvider();
   });
 
-  it('defaults to Ollama provider with qwen2.5-coder:0.5b model', () => {
+  it('defaults to Ollama provider with smollm2:135m model', () => {
     const config = getProviderConfig();
     expect(config.provider).toBe('ollama');
-    expect(config.modelId).toBe('ollama/qwen2.5-coder:0.5b');
+    expect(config.modelId).toBe('ollama/smollm2:135m');
   });
 
   it('reads provider from localStorage', () => {

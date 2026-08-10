@@ -81,16 +81,12 @@ const EXPERT_ONLY_IDS = [
 
 // Model IDs that are <=1.5B and OK for auto paths
 const ALLOWED_AUTO_IDS = [
+  'ollama/smollm2:135m',
   'ollama/qwen2.5-coder:0.5b',
-  'ollama/qwen2.5-coder:1.5b',
   'ollama/qwen2.5:0.5b',
-  'ollama/qwen2.5:1.5b',
-  'ollama/llama3.2:1b',
+  'smollm2:135m',
   'qwen2.5-coder:0.5b',
-  'qwen2.5-coder:1.5b',
   'qwen2.5:0.5b',
-  'qwen2.5:1.5b',
-  'llama3.2:1b',
 ];
 
 // ===========================================================================

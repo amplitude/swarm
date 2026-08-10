@@ -12,22 +12,22 @@ describe('classifyLoadError()', () => {
   });
 
   it('classifies exact model-not-found (single-quoted) as "model" (eligible)', () => {
-    expect(classifyLoadError(new Error("model 'qwen2.5-coder:0.5b' not found locally")))
+    expect(classifyLoadError(new Error("model 'smollm2:135m' not found locally")))
       .toBe('model');
   });
 
   it('classifies manifest-not-found as "model" (eligible)', () => {
-    expect(classifyLoadError(new Error('manifest for model "qwen2.5-coder:0.5b" not found')))
+    expect(classifyLoadError(new Error('manifest for model "smollm2:135m" not found')))
       .toBe('model');
   });
 
   it('classifies "no such model" as "model" (eligible)', () => {
-    expect(classifyLoadError(new Error('no such model: qwen2.5-coder:0.5b')))
+    expect(classifyLoadError(new Error('no such model: smollm2:135m')))
       .toBe('model');
   });
 
   it('classifies unsupported architecture as "model" (eligible)', () => {
-    expect(classifyLoadError(new Error('unsupported architecture for model "qwen2.5-coder:0.5b"')))
+    expect(classifyLoadError(new Error('unsupported architecture for model "smollm2:135m"')))
       .toBe('model');
   });
 
@@ -184,7 +184,7 @@ describe('FallbackProvider', () => {
       expect(info.fallbackReason).toBeNull();
     });
 
-    it('falls back to 1.5B when primary fails with model-not-found (eligible)', async () => {
+    it('falls back to 0.5B when primary smollm2:135m fails with model-not-found (eligible)', async () => {
       // Primary fails with exact model-not-found error thrown by fetch,
       // so OllamaProvider wraps it preserving the original message via
       // extractInnerMessage. Fallback succeeds.
@@ -194,50 +194,50 @@ describe('FallbackProvider', () => {
         if (url.toString().includes('/api/tags')) {
           if (callCount === 1) {
             // Primary load: fetch rejects with model-not-found
-            throw new Error('model "qwen2.5-coder:0.5b" not found');
+            throw new Error('model "smollm2:135m" not found');
           }
           // Fallback: exists
           return {
             ok: true,
             json: async () => ({
-              models: [{ name: 'qwen2.5-coder:1.5b' }],
+              models: [{ name: 'qwen2.5-coder:0.5b' }],
             }),
           };
         }
         return { ok: true, body: new ReadableStream() };
       });
 
-      await provider.load('ollama/qwen2.5-coder:0.5b', onProgress);
+      await provider.load('ollama/smollm2:135m', onProgress);
 
       expect(provider.isLoaded()).toBe(true);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
       expect(provider.getFallbackAttempted()).toBe(true);
       const info = provider.getFallbackInfo();
-      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:1.5b');
-      expect(info.fallbackReason).toContain('qwen2.5-coder:0.5b');
+      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(info.fallbackReason).toContain('smollm2:135m');
     });
 
-    it('falls back to 1.5B when primary fails with manifest-not-found (eligible)', async () => {
+    it('falls back to 0.5B when primary smollm2:135m fails with manifest-not-found (eligible)', async () => {
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
         callCount++;
         if (url.toString().includes('/api/tags')) {
           if (callCount === 1) {
-            throw new Error('manifest for model "qwen2.5-coder:0.5b" not found');
+            throw new Error('manifest for model "smollm2:135m" not found');
           }
           return {
             ok: true,
             json: async () => ({
-              models: [{ name: 'qwen2.5-coder:1.5b' }],
+              models: [{ name: 'qwen2.5-coder:0.5b' }],
             }),
           };
         }
         return { ok: true, body: new ReadableStream() };
       });
 
-      await provider.load('ollama/qwen2.5-coder:0.5b', onProgress);
+      await provider.load('ollama/smollm2:135m', onProgress);
       expect(provider.isLoaded()).toBe(true);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
       expect(provider.getFallbackAttempted()).toBe(true);
     });
 
@@ -247,21 +247,21 @@ describe('FallbackProvider', () => {
         callCount++;
         if (url.toString().includes('/api/tags')) {
           if (callCount === 1) {
-            throw new Error('unsupported architecture for model "qwen2.5-coder:0.5b"');
+            throw new Error('unsupported architecture for model "smollm2:135m"');
           }
           return {
             ok: true,
             json: async () => ({
-              models: [{ name: 'qwen2.5-coder:1.5b' }],
+              models: [{ name: 'qwen2.5-coder:0.5b' }],
             }),
           };
         }
         return { ok: true, body: new ReadableStream() };
       });
 
-      await provider.load('ollama/qwen2.5-coder:0.5b', onProgress);
+      await provider.load('ollama/smollm2:135m', onProgress);
       expect(provider.isLoaded()).toBe(true);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
       expect(provider.getFallbackAttempted()).toBe(true);
     });
 
@@ -277,7 +277,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -293,7 +293,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -308,7 +308,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -323,7 +323,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -340,7 +340,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -352,14 +352,14 @@ describe('FallbackProvider', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          models: [{ name: 'llama3.2:1b' }], // primary model not in list
+          models: [{ name: 'qwen2.5-coder:0.5b' }], // primary model not in list
         }),
       });
 
-      await provider.load('ollama/qwen2.5-coder:0.5b', onProgress);
+      await provider.load('ollama/smollm2:135m', onProgress);
 
       expect(provider.isLoaded()).toBe(true);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
       expect(provider.getFallbackAttempted()).toBe(false);
     });
 
@@ -373,7 +373,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -388,7 +388,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -403,7 +403,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -418,7 +418,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -433,7 +433,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -450,7 +450,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = fetchFn;
 
       await expect(
-        provider.load('ollama/qwen2.5-coder:0.5b', onProgress),
+        provider.load('ollama/smollm2:135m', onProgress),
       ).rejects.toThrow();
 
       expect(provider.isLoaded()).toBe(false);
@@ -463,21 +463,21 @@ describe('FallbackProvider', () => {
       globalThis.fetch = vi.fn().mockImplementation(async () => {
         callCount++;
         if (callCount === 1) {
-          const err = new Error('model "qwen2.5-coder:0.5b" not found');
+          const err = new Error('model "smollm2:135m" not found');
           throw err;
         }
         return {
           ok: true,
           json: async () => ({
-            models: [{ name: 'qwen2.5-coder:1.5b' }],
+            models: [{ name: 'qwen2.5-coder:0.5b' }],
           }),
         };
       });
 
-      await provider.load('ollama/qwen2.5-coder:0.5b', onProgress);
+      await provider.load('ollama/smollm2:135m', onProgress);
 
       const info = provider.getFallbackInfo();
-      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:0.5b');
       expect(info.fallbackReason).toBeTruthy();
       expect(typeof info.fallbackReason).toBe('string');
       expect(info.fallbackReason!.length).toBeGreaterThan(10);
@@ -490,8 +490,8 @@ describe('FallbackProvider', () => {
       const provider2 = new FallbackProvider();
       // Simulate fallback state via monkey-patching internal state
       Object.assign(provider2, {
-        activeModelId: 'ollama/qwen2.5-coder:1.5b',
-        primaryModelId: 'ollama/qwen2.5-coder:0.5b',
+        activeModelId: 'ollama/qwen2.5-coder:0.5b',
+        primaryModelId: 'ollama/smollm2:135m',
         fallbackAttempted: true,
         fallbackReason: 'test reason',
       });
@@ -515,7 +515,7 @@ describe('FallbackProvider', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          models: [{ name: 'qwen2.5-coder:0.5b' }],
+          models: [{ name: 'smollm2:135m' }],
         }),
       });
     });
@@ -531,7 +531,7 @@ describe('FallbackProvider', () => {
 
     it('rejects escalation when no primary model is active', async () => {
       await expect(
-        provider.escalateForCapabilityFailure('0.5B tool-call failure'),
+        provider.escalateForCapabilityFailure('135m tool-call failure'),
       ).rejects.toThrow('no primary model is currently active');
 
       expect(provider.getFallbackAttempted()).toBe(false);
@@ -544,19 +544,19 @@ describe('FallbackProvider', () => {
 
     it('rejects escalation on cancellation reason', async () => {
       // Load primary first
-      await provider.load('ollama/qwen2.5-coder:0.5b');
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      await provider.load('ollama/smollm2:135m');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
 
       await expect(
         provider.escalateForCapabilityFailure('user cancelled the request'),
       ).rejects.toThrow('reason must be capability-related');
 
       expect(provider.getFallbackAttempted()).toBe(false);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
     });
 
     it('rejects escalation on generic error reason', async () => {
-      await provider.load('ollama/qwen2.5-coder:0.5b');
+      await provider.load('ollama/smollm2:135m');
 
       await expect(
         provider.escalateForCapabilityFailure('network error occurred'),
@@ -566,7 +566,7 @@ describe('FallbackProvider', () => {
     });
 
     it('rejects escalation on auth error reason', async () => {
-      await provider.load('ollama/qwen2.5-coder:0.5b');
+      await provider.load('ollama/smollm2:135m');
 
       await expect(
         provider.escalateForCapabilityFailure('HTTP 401 Unauthorized'),
@@ -581,66 +581,65 @@ describe('FallbackProvider', () => {
 
     it('rejects escalation when already on fallback', async () => {
       // Load primary first
-      await provider.load('ollama/qwen2.5-coder:0.5b');
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      await provider.load('ollama/smollm2:135m');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
 
       // First escalation should work
-      await provider.escalateForCapabilityFailure('0.5B capability check failed');
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      await provider.escalateForCapabilityFailure('135m capability check failed');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
       expect(provider.getFallbackAttempted()).toBe(true);
 
       // Second escalation must be rejected (already on fallback).
-      // Use a capability-related reason so the reason guard passes first.
       await expect(
         provider.escalateForCapabilityFailure('second escalation: still failing capability'),
       ).rejects.toThrow('already running on a fallback model');
 
       // State unchanged
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
     });
 
     // -------------------------------------------------------------------
     // Successful escalation flow
     // -------------------------------------------------------------------
 
-    it('successfully escalates from 0.5B to 1.5B with transition evidence', async () => {
-      // Load primary 0.5B
-      await provider.load('ollama/qwen2.5-coder:0.5b');
+    it('successfully escalates from 135m to 0.5B with transition evidence', async () => {
+      // Load primary 135m
+      await provider.load('ollama/smollm2:135m');
       expect(provider.isLoaded()).toBe(true);
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
       expect(provider.getFallbackAttempted()).toBe(false);
 
       // No previous active before any escalation
       expect(provider.getPreviousActiveModelId()).toBeNull();
 
       // Escalate
-      await provider.escalateForCapabilityFailure('0.5B tool call capability insufficient');
+      await provider.escalateForCapabilityFailure('135m tool call capability insufficient');
 
       // Verify transition evidence
-      expect(provider.getPreviousActiveModelId()).toBe('ollama/qwen2.5-coder:0.5b');
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getPreviousActiveModelId()).toBe('ollama/smollm2:135m');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
       expect(provider.getFallbackAttempted()).toBe(true);
 
       const info = provider.getFallbackInfo();
-      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:0.5b');
       expect(info.fallbackReason).toContain('Capability escalation');
-      expect(info.fallbackReason).toContain('0.5B tool call capability insufficient');
+      expect(info.fallbackReason).toContain('135m tool call capability insufficient');
+      expect(info.fallbackReason).toContain('ollama/smollm2:135m');
       expect(info.fallbackReason).toContain('ollama/qwen2.5-coder:0.5b');
-      expect(info.fallbackReason).toContain('ollama/qwen2.5-coder:1.5b');
     });
 
-    it('records correct transition for 0.5B -> 1.5B (exact model strings)', async () => {
-      await provider.load('ollama/qwen2.5-coder:0.5b');
-      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+    it('records correct transition for smollm2:135m -> qwen2.5-coder:0.5b (exact model strings)', async () => {
+      await provider.load('ollama/smollm2:135m');
+      expect(provider.getLoadedModel()).toBe('ollama/smollm2:135m');
 
-      await provider.escalateForCapabilityFailure('0.5B cannot produce valid tool calls');
+      await provider.escalateForCapabilityFailure('135m cannot produce valid tool calls');
 
       // Exact transition proof
       const previous = provider.getPreviousActiveModelId();
       const current = provider.getLoadedModel();
-      expect(previous).toBe('ollama/qwen2.5-coder:0.5b');
-      expect(current).toBe('ollama/qwen2.5-coder:1.5b');
-      // Must not be null -> 1.5B
+      expect(previous).toBe('ollama/smollm2:135m');
+      expect(current).toBe('ollama/qwen2.5-coder:0.5b');
+      // Must not be null -> 0.5B
       expect(previous).not.toBeNull();
       expect(previous).toBeDefined();
     });

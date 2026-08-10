@@ -59,7 +59,7 @@ export function AgentCard({
   return (
     <div
       onClick={onClick}
-      className={`bg-surface-raised border border-border-subtle rounded-lg p-4 transition-all duration-200 hover:border-border-strong cursor-pointer border-l-2 min-w-[280px] ${borderLeft} ${state.isThinking ? 'animate-pulse-dot' : ''} ${isSelected ? `bg-surface-overlay border-border-strong ${meta.activeGlow}` : ''}`}
+      className={`bg-surface-raised border border-border-subtle rounded-lg p-4 transition-all duration-200 hover:border-border-strong cursor-pointer border-l-2 min-w-[280px] max-sm:min-w-0 ${borderLeft} ${state.isThinking ? 'animate-pulse-dot' : ''} ${isSelected ? `bg-surface-overlay border-border-strong ${meta.activeGlow}` : ''}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">

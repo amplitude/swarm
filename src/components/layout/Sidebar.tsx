@@ -129,14 +129,14 @@ export function Sidebar() {
       <div className="flex items-center gap-1 border-t border-border px-3 py-2">
         <button
           onClick={toggleTheme}
-          className="rounded-md p-2 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+          className="flex items-center justify-center rounded-md min-w-[32px] min-h-[32px] p-2 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
-          className="rounded-md p-2 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+          className="flex items-center justify-center rounded-md min-w-[32px] min-h-[32px] p-2 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
           title="Settings"
         >
           <Settings size={15} />

@@ -49,7 +49,7 @@ export function WorkspacePanel() {
           <Package size={14} />
           Artifacts ({filtered.length})
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={agentFilter}
             onChange={(e) => setAgentFilter(e.target.value as AgentType | 'all')}

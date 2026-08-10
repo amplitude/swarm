@@ -23,7 +23,7 @@ export function Header() {
       {/* Sidebar toggle */}
       <button
         onClick={toggleSidebar}
-        className="rounded-md p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+        className="flex items-center justify-center rounded-md min-w-[32px] min-h-[32px] p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
         title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
       >
         <PanelLeft size={16} />
@@ -42,7 +42,7 @@ export function Header() {
       {/* Right panel toggle */}
       <button
         onClick={toggleRightPanel}
-        className="rounded-md p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+        className="flex items-center justify-center rounded-md min-w-[32px] min-h-[32px] p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
         title={rightPanelOpen ? 'Close panel' : 'Open panel'}
       >
         <PanelRight size={16} />

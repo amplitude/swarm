@@ -120,7 +120,7 @@ export function MissionControl() {
           </span>
           <button
             onClick={() => setSettingsOpen(true)}
-            className="rounded-md p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+            className="flex items-center justify-center rounded-md min-w-[32px] min-h-[32px] p-1.5 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
           >
             <Settings size={16} />
           </button>
@@ -155,11 +155,11 @@ export function MissionControl() {
         </div>
 
         {/* RIGHT: Side Panel (35-40%) */}
-        <div className="flex flex-col w-[37%] min-w-0 overflow-y-auto bg-surface-inset">
+        <div className="flex flex-col w-[37%] min-w-0 overflow-y-auto overflow-x-hidden bg-surface-inset">
           {/* Specialist Agent Cards */}
           <div className="p-4 pb-2">
             <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">Specialist Agents</h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               {SPECIALIST_IDS.map((agentId) => (
                 <AgentCard
                   key={agentId}

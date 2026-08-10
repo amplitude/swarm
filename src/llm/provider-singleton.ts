@@ -33,12 +33,14 @@ export function getProviderConfig(): ProviderConfig {
   const lsModel = typeof localStorage !== 'undefined' ? localStorage.getItem('swarm-model-id') : null;
 
   // Default models per provider
-  const defaultModels: Record<ProviderType, string> = {
+  // WebLLM has no default — all WebLLM models are >1.5B and require explicit user selection.
+  // Ollama defaults to the smallest tested fallback, <=1.5B.
+  const defaultModels: Record<ProviderType, string | undefined> = {
     ollama: 'ollama/qwen2.5-coder:0.5b',
-    webllm: 'Phi-3.5-mini-instruct-q4f16_1-MLC',
+    webllm: undefined,
   };
 
-  const modelId = lsModel || envModel || defaultModels[provider];
+  const modelId = lsModel || envModel || defaultModels[provider] || '';
 
   return { provider, modelId };
 }

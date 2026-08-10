@@ -584,12 +584,11 @@ interface LLMRequest {
 
 ### A.1 LLM Runtime (Task #1 findings)
 
-**Primary: @mlc-ai/web-llm** -- Apache 2.0 license, fully free, no commercial restrictions. Supports WebGPU for GPU-accelerated inference. Provides built-in function calling support, streaming, and model caching via Cache API. Recommended models for agentic use:
+**Primary: @mlc-ai/web-llm** -- Apache 2.0 license, fully free, no commercial restrictions. Supports WebGPU for GPU-accelerated inference. Provides built-in function calling support, streaming, and model caching via Cache API. All WebLLM models are >1.5B and require explicit user selection (no automatic fallback). Recommended models for agentic use:
 - **Llama 3.1 8B Instruct (q4f16_1)**: Good balance of quality and size (~4GB). Supports tool/function calling.
-- **Phi-3.5 Mini Instruct (q4f16_1)**: Smaller (~2GB), faster, decent quality for simpler tasks.
 - **Qwen2.5 7B Instruct (q4f16_1)**: Strong multilingual support, good at structured output.
 
-**Fallback: @huggingface/transformers (v3+)** -- Apache 2.0, WASM-based, works without WebGPU. Slower but broader browser compatibility. Use for browsers without WebGPU support.
+**Future: @huggingface/transformers (v3+)** -- Apache 2.0, WASM-based, works without WebGPU. Slower but broader browser compatibility. Not yet implemented.
 
 **Model caching**: web-llm uses the browser Cache API (not IndexedDB) for model weights. Cache API has no hard size limit but browsers may evict under storage pressure. Use `navigator.storage.persist()` to request persistent storage.
 

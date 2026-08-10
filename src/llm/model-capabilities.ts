@@ -47,6 +47,8 @@ const MLC_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
     maxContextTokens: 8192,
     toolCallFormat: 'json-text',
   },
+  // Phi-3.5 Mini (3.8B, ~2 GB) — kept for capability recognition when explicitly configured by user.
+  // Not auto-selected per design: all automatic defaults are <=1.5B.
   'Phi-3.5-mini-instruct-q4f16_1-MLC': {
     supportsNativeFunctionCalling: false,
     supportsSystemPromptWithTools: true,
@@ -90,6 +92,8 @@ const OLLAMA_MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
     maxContextTokens: 8192,
     toolCallFormat: 'json-text',
   },
+  // phi3 models (>1.5B) — kept for capability recognition when explicitly configured.
+  // Not auto-selected.
   'phi3:mini': {
     supportsNativeFunctionCalling: false,
     supportsSystemPromptWithTools: true,
@@ -179,14 +183,24 @@ function maybeDowngrade(modelId: string, caps: ModelCapabilities): ModelCapabili
 // Model size estimation (for storage checks)
 // ---------------------------------------------------------------------------
 
-/** Estimated download bytes for known models. Returns 0 for Ollama models (no download). */
+/**
+ * Estimated download bytes for known models.
+ *
+ * NOTE: These are unverified estimates from the MLC registry. No live smoke tests
+ * have been run on WebLLM/MLC models — WebGPU is not available in this environment.
+ * The sizes below are MLC-reported estimates, not measured.
+ *
+ * Ollama model sizes return 0 because they are handled by the local Ollama service,
+ * not downloaded by the browser. Actual Ollama sizes have been live-verified
+ * (see engine.ts RECOMMENDED_MODELS for measured sizes).
+ */
 export function getModelEstimatedBytes(modelId: string): number {
   // Ollama models are downloaded by Ollama itself, not by the browser
   if (modelId.startsWith('ollama/')) {
     return 0;
   }
 
-  // MLC models — approximate sizes based on quantization
+  // MLC models — approximate sizes from registry (unverified via live smoke test)
   const mlcSizes: Record<string, number> = {
     'Qwen3-8B-q4f16_1-MLC': 5 * 1024 * 1024 * 1024,
     'Qwen3-4B-q4f16_1-MLC': 3 * 1024 * 1024 * 1024,

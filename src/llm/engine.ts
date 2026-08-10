@@ -39,57 +39,50 @@ const OLLAMA_MODELS = [
   {
     id: 'ollama/qwen2.5-coder:0.5b',
     name: 'Qwen 2.5 Coder 0.5B',
-    size: '~750 MB',
+    size: '397 MB',
     runtime: 'Ollama',
-    description: 'Smallest capable coder model. Fastest option. Requires Ollama.',
+    description: 'Smallest capable coder model. Fastest option (live-tested 2026-08-10, Q4_K_M, 494M params, ~0.5-1s latency). Requires Ollama.',
   },
   {
     id: 'ollama/qwen2.5-coder:1.5b',
     name: 'Qwen 2.5 Coder 1.5B',
-    size: '~1 GB',
+    size: '986 MB',
     runtime: 'Ollama',
-    description: 'Lightweight coder with better reasoning. Requires Ollama.',
+    description: 'Lightweight coder with better reasoning (live-tested 2026-08-10, Q4_K_M, 1.5B params). Requires Ollama.',
   },
   {
     id: 'ollama/llama3.2:1b',
     name: 'Llama 3.2 1B',
-    size: '~800 MB',
+    size: '1.3 GB',
     runtime: 'Ollama',
-    description: 'Meta\'s smallest instruct model. Fast and general. Requires Ollama.',
+    description: 'Meta\'s smallest instruct model (Q8_0 quantization; larger disk than Q4 variants). Requires Ollama.',
   },
   {
     id: 'ollama/qwen2.5:0.5b',
     name: 'Qwen 2.5 0.5B',
-    size: '~500 MB',
+    size: '397 MB',
     runtime: 'Ollama',
-    description: 'Smallest general model. Requires Ollama.',
+    description: 'Smallest general model (live-tested 2026-08-10, Q4_K_M, 494M params). Requires Ollama.',
   },
 ] as const;
 
-// WebLLM models (fallback — browser-native, no server needed)
+// WebLLM models (browser-native via WebGPU — requires explicit user selection; >1.5B, never auto-selected)
 const MLC_MODELS = [
   {
     id: 'Qwen3-8B-q4f16_1-MLC',
     name: 'Qwen 3 8B',
     size: '~5 GB',
     runtime: 'WebLLM',
-    description: 'Best for agents. Strong instruction following and tool use via text. WebGPU required.',
+    description: 'Best for agents. Strong instruction following and tool use via text. WebGPU required. >1.5B — manually selected only.',
   },
   {
     id: 'Qwen3-4B-q4f16_1-MLC',
     name: 'Qwen 3 4B',
     size: '~3 GB',
     runtime: 'WebLLM',
-    description: 'Lightweight and capable. Good tool calling for its size. WebGPU required.',
+    description: 'Lightweight and capable. Good tool calling for its size. WebGPU required. >1.5B — manually selected only.',
   },
-  {
-    id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',
-    name: 'Phi 3.5 Mini Instruct',
-    size: '~2 GB',
-    runtime: 'WebLLM',
-    description: 'Smallest WebLLM model. Basic tool calling. WebGPU required.',
-  },
-] as const;
+] as const;  // Phi-3.5 Mini (3.8B) removed from defaults — only available via explicit model config
 
 export const RECOMMENDED_MODELS = [...OLLAMA_MODELS, ...MLC_MODELS] as const;
 

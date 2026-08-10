@@ -33,6 +33,21 @@ Pull it:
 ollama pull qwen2.5-coder:0.5b
 ```
 
+### Automatic Fallback Chain
+
+If the primary model (qwen2.5-coder:0.5b) fails to load, the app **automatically escalates** to qwen2.5-coder:1.5b. The fallback triggers only for eligible failures:
+
+| Eligible (triggers fallback) | NOT eligible (error propagates) |
+|------------------------------|----------------------------------|
+| Connection refused (Ollama unreachable) | User cancellation (AbortError) |
+| Model not found (HTTP 404) | Auth/config errors (HTTP 401/403) |
+| Incompatible model (HTTP 400) | JSON parse / arbitrary errors |
+| Server errors (HTTP 500) | — |
+
+The app surfaces which model is active and why fallback occurred via `getFallbackInfo()`. If you explicitly set a model via localStorage or env var, that choice takes priority and the fallback chain respects it.
+
+See `src/llm/fallback-provider.ts` for implementation and tests.
+
 ### Other Recommended Models
 
 | Model | Size (measured live) | Notes |

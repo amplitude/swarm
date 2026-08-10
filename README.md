@@ -62,6 +62,7 @@ Swarm is a browser-based AI agent team platform. Multiple specialized AI agents 
 
 - **Truly offline** — No telemetry, no cloud backend, no data leaves your device
 - **Local model inference** — Via Ollama (default, lightweight local service) or WebLLM/WebGPU (browser-native)
+- **Automatic model fallback** — If the primary model (qwen2.5-coder:0.5b, 397 MB) fails to load, the app automatically escalates to qwen2.5-coder:1.5b (986 MB). Only connection, model-load, and compatibility failures trigger fallback — not user cancellation or auth issues.
 - **Agent handoffs** — Agents can delegate tasks to each other
 - **Sandboxed code execution** — Iframe sandbox + QuickJS WASM
 - **Mermaid diagram rendering** — From natural language
@@ -90,6 +91,8 @@ Swarm is a browser-based AI agent team platform. Multiple specialized AI agents 
 ## Documentation
 
 - [Local Model Setup](docs/local-model.md) — Model selection, configuration, troubleshooting
+- [Model Fallback](src/llm/fallback-provider.ts) — Automatic fallback chain code
+- [Release Evidence](docs/release-evidence.md) — Provenance, model sizes, test results
 - [Product Requirements (PRD)](docs/PRD.md)
 - [System Architecture](docs/ARCHITECTURE.md)
 - [Model Compatibility](docs/MODEL-COMPATIBILITY.md)

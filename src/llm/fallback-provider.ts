@@ -1,5 +1,6 @@
 import type { LLMProvider, LLMRequest, LLMStreamChunk } from './engine';
 import { OllamaProvider } from './ollama-provider';
+import { FALLBACK_MAP, DEFAULT_FALLBACK_MODEL_ID } from './model-constants';
 
 // ---------------------------------------------------------------------------
 // Error classification
@@ -159,8 +160,8 @@ export class FallbackProvider implements LLMProvider {
   private fallbackReason: string | null = null;
   private fallbackAttempted: boolean = false;
 
-  /** Default fallback model used when primary is ollama/qwen2.5-coder:0.5b */
-  private readonly defaultFallbackModelId = 'ollama/qwen2.5-coder:1.5b';
+  /** Default fallback model used when primary is not in FALLBACK_MAP */
+  private readonly defaultFallbackModelId = DEFAULT_FALLBACK_MODEL_ID;
 
   constructor() {
     this.activeProvider = new OllamaProvider();
@@ -272,18 +273,14 @@ export class FallbackProvider implements LLMProvider {
 
   /**
    * Determine the fallback model ID for a given primary model.
+   * Uses the centralized FALLBACK_MAP from model-constants.ts.
    * Maps small Ollama models to their next-larger counterpart.
    * Returns null if no appropriate fallback is known for this model.
    */
   private getFallbackModelId(primaryModelId: string): string | null {
     const bare = primaryModelId.replace(/^ollama\//, '');
 
-    const fallbackMap: Record<string, string> = {
-      'qwen2.5-coder:0.5b': 'ollama/qwen2.5-coder:1.5b',
-      'qwen2.5:0.5b': 'ollama/qwen2.5:1.5b',
-    };
-
-    const mapped = fallbackMap[bare];
+    const mapped = FALLBACK_MAP[bare];
     if (mapped) return mapped;
 
     // For unknown models, return the default fallback if primary isn't already it

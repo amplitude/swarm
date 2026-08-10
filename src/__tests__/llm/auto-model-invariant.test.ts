@@ -495,4 +495,137 @@ describe('Auto-model invariant: all automatic paths <=1.5B Ollama only', () => {
       console.log('  WebLLMProvider: no auto-load on construction');
     });
   });
+
+  // ---------------------------------------------------------------
+  // 11. Centralized module (model-constants.ts) — single source of truth
+  // ---------------------------------------------------------------
+  describe('Centralized model-constants.ts — single source of truth', () => {
+    it('enumerateAutoModelIds() returns all auto/default model IDs', async () => {
+      const { enumerateAutoModelIds } = await import('@/llm/model-constants');
+      const ids = enumerateAutoModelIds();
+      expect(ids.length).toBeGreaterThanOrEqual(3);
+
+      console.log(`  Auto model IDs (${ids.length} total):`);
+      for (const id of ids) {
+        console.log(`    ${id}`);
+      }
+
+      // Every auto ID must be Ollama and <=1.5B
+      for (const id of ids) {
+        expect(id.startsWith('ollama/')).toBe(true);
+        const size = extractModelSize(id);
+        expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+      }
+    });
+
+    it('enumerateExpertModelIds() returns all >1.5B expert-only model IDs', async () => {
+      const { enumerateExpertModelIds } = await import('@/llm/model-constants');
+      const ids = enumerateExpertModelIds();
+      expect(ids.length).toBeGreaterThanOrEqual(1);
+
+      console.log(`  Expert-only model IDs (${ids.length} total):`);
+      for (const id of ids) {
+        console.log(`    ${id}`);
+        const size = extractModelSize(id);
+        expect(size).toBeGreaterThan(MAX_AUTO_PARAMS);
+      }
+    });
+
+    it('FALLBACK_MAP has no >1.5B keys or values', async () => {
+      const { FALLBACK_MAP } = await import('@/llm/model-constants');
+      const entries = Object.entries(FALLBACK_MAP);
+      expect(entries.length).toBeGreaterThanOrEqual(1);
+
+      for (const [key, value] of entries) {
+        const keySize = extractModelKeySize(key);
+        const valSize = extractModelKeySize(value);
+        expect(keySize).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+        expect(valSize).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+        console.log(`  Fallback: ${key} (${keySize}B) -> ${value} (${valSize}B)`);
+      }
+    });
+
+    it('PROVIDER_DEFAULT_MODELS only references <=1.5B or undefined', async () => {
+      const { PROVIDER_DEFAULT_MODELS } = await import('@/llm/model-constants');
+      for (const [provider, modelId] of Object.entries(PROVIDER_DEFAULT_MODELS)) {
+        if (modelId === undefined) {
+          console.log(`  Provider "${provider}": no default (explicitly undefined)`);
+          continue;
+        }
+        const size = extractModelSize(modelId);
+        expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+        expect(modelId.startsWith('ollama/')).toBe(true);
+        console.log(`  Provider "${provider}": ${modelId} (${size}B)`);
+      }
+    });
+
+    it('isModelAutoAllowed() validates all known model IDs correctly', async () => {
+      const { isModelAutoAllowed, enumerateAutoModelIds, enumerateExpertModelIds } = await import('@/llm/model-constants');
+
+      // All auto model IDs must pass isModelAutoAllowed
+      for (const id of enumerateAutoModelIds()) {
+        expect(isModelAutoAllowed(id)).toBe(true);
+      }
+
+      // All expert model IDs must NOT pass isModelAutoAllowed
+      for (const id of enumerateExpertModelIds()) {
+        expect(isModelAutoAllowed(id)).toBe(false);
+      }
+
+      console.log('  isModelAutoAllowed() correctly classifies all known model IDs');
+    });
+
+    it('DEFAULT_FALLBACK_MODEL_ID is <=1.5B', async () => {
+      const { DEFAULT_FALLBACK_MODEL_ID } = await import('@/llm/model-constants');
+      const size = extractModelSize(DEFAULT_FALLBACK_MODEL_ID);
+      expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+      expect(DEFAULT_FALLBACK_MODEL_ID.startsWith('ollama/')).toBe(true);
+      console.log(`  DEFAULT_FALLBACK_MODEL_ID: ${DEFAULT_FALLBACK_MODEL_ID} (${size}B)`);
+    });
+
+    it('resolveOnboardingDefaultModel returns <=1.5B for ollama and undefined for webllm', async () => {
+      const { resolveOnboardingDefaultModel } = await import('@/llm/model-constants');
+
+      const ollamaDefault = resolveOnboardingDefaultModel('ollama');
+      expect(ollamaDefault).toBeDefined();
+      expect(ollamaDefault!.startsWith('ollama/')).toBe(true);
+      const size = extractModelSize(ollamaDefault!);
+      expect(size).toBeLessThanOrEqual(MAX_AUTO_PARAMS);
+      console.log(`  Onboarding ollama default: ${ollamaDefault} (${size}B)`);
+
+      const webllmDefault = resolveOnboardingDefaultModel('webllm');
+      expect(webllmDefault).toBeUndefined();
+      console.log('  Onboarding webllm default: undefined (correctly no auto-default)');
+    });
+
+    it('all re-exports from engine.ts match model-constants.ts values', async () => {
+      const engineExports = await import('@/llm/engine');
+      const constantsExports = await import('@/llm/model-constants');
+
+      // DEFAULT_MODEL
+      expect(engineExports.DEFAULT_MODEL).toBe(constantsExports.DEFAULT_MODEL);
+
+      // RECOMMENDED_MODELS length
+      expect(engineExports.RECOMMENDED_MODELS.length).toBe(constantsExports.RECOMMENDED_MODELS.length);
+
+      // enumerateAutoModelIds
+      const engineAuto = engineExports.enumerateAutoModelIds();
+      const constAuto = constantsExports.enumerateAutoModelIds();
+      expect(engineAuto.sort()).toEqual(constAuto.sort());
+
+      console.log('  Re-exports from engine.ts match model-constants.ts: PASS');
+    });
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Helpers (local, extracted for model-constants tests)
+// ---------------------------------------------------------------------------
+
+function extractModelKeySize(modelId: string): number {
+  if (modelId.startsWith('ollama/qwen2.5-coder:1.5b')) return 1.5;
+  if (modelId.startsWith('ollama/qwen2.5:1.5b')) return 1.5;
+  if (modelId.startsWith('ollama/qwen2.5-coder:0.5b')) return 0.5;
+  if (modelId.startsWith('ollama/qwen2.5:0.5b')) return 0.5;
+  return extractModelSize(modelId);
+}

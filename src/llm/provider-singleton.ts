@@ -2,12 +2,14 @@ import type { LLMProvider } from './engine';
 import { WebLLMProvider } from './web-llm-provider';
 import { OllamaProvider } from './ollama-provider';
 import { CompatibilityLayer } from './compatibility-layer';
+import { PROVIDER_DEFAULT_MODELS } from './model-constants';
+import type { ProviderType } from './model-constants';
 
 // ---------------------------------------------------------------------------
 // Provider configuration
 // ---------------------------------------------------------------------------
 
-export type ProviderType = 'ollama' | 'webllm';
+export type { ProviderType } from './model-constants';
 
 export interface ProviderConfig {
   /** Inference provider */
@@ -20,7 +22,7 @@ export interface ProviderConfig {
 
 /**
  * Get the current provider configuration.
- * Priority: env vars > localStorage > defaults
+ * Priority: env vars > localStorage > defaults (from centralized model-constants.ts)
  */
 export function getProviderConfig(): ProviderConfig {
   const envProvider = typeof import.meta !== 'undefined' ? import.meta.env.VITE_LLM_PROVIDER : undefined;
@@ -32,15 +34,10 @@ export function getProviderConfig(): ProviderConfig {
   const envModel = typeof import.meta !== 'undefined' ? import.meta.env.VITE_LLM_MODEL : undefined;
   const lsModel = typeof localStorage !== 'undefined' ? localStorage.getItem('swarm-model-id') : null;
 
-  // Default models per provider
+  // Default models per provider (from centralized model-constants.ts)
   // WebLLM has no default — all WebLLM models are >1.5B and require explicit user selection.
-  // Ollama defaults to the smallest tested fallback, <=1.5B.
-  const defaultModels: Record<ProviderType, string | undefined> = {
-    ollama: 'ollama/qwen2.5-coder:0.5b',
-    webllm: undefined,
-  };
-
-  const modelId = lsModel || envModel || defaultModels[provider] || '';
+  // Ollama defaults to the smallest tested model, <=0.5B.
+  const modelId = lsModel || envModel || PROVIDER_DEFAULT_MODELS[provider] || '';
 
   return { provider, modelId };
 }

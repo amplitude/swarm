@@ -1,6 +1,21 @@
 {
-  "timestamp": "2026-08-10T22:09:34.817Z",
+  "timestamp": "2026-08-10T22:21:27.222Z",
   "baseUrl": "http://127.0.0.1:5199/swarm/",
+  "profile": {
+    "path": "/Users/averychan/Documents/amp/swarm/test-output/e2e-profile-1786400487221",
+    "existedBeforeCreation": false
+  },
+  "chromiumInfo": {
+    "executable": "(error getting path: chromiumInstance.process is not a function)",
+    "args": [
+      "--user-data-dir=/Users/averychan/Documents/amp/swarm/test-output/e2e-profile-1786400487221",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage"
+    ],
+    "userDataDir": "/Users/averychan/Documents/amp/swarm/test-output/e2e-profile-1786400487221",
+    "profileExistedAfterLaunch": true
+  },
   "viewports": {
     "desktop": {
       "width": 1280,
@@ -106,6 +121,20 @@
     "desktop": "/Users/averychan/Documents/amp/swarm/docs/screenshots/blank-first-run.png",
     "mobile": "/Users/averychan/Documents/amp/swarm/docs/screenshots/blank-first-run-mobile.png"
   },
+  "screenshotHashes": {
+    "desktop": "9dc08d9f96959c4954a352c5c618e67fef79ee89522af1e7e35091199aca64c1",
+    "mobile": "0c5fdc9375cc5c1dc1058e73ff9953229e4f2ea4fcce2a2d00044240211c8c9f"
+  },
+  "screenshotDimensions": {
+    "desktop": {
+      "width": 1280,
+      "height": 720
+    },
+    "mobile": {
+      "width": 375,
+      "height": 812
+    }
+  },
   "assertions": {
     "titleTextVisible": true,
     "ctaVisible": true,
@@ -115,6 +144,7 @@
       "swarm-last-agent"
     ],
     "zeroConversationsInDB": true,
-    "zeroMessagesInDB": true
+    "zeroMessagesInDB": true,
+    "profilePathNewlyCreated": true
   }
 }

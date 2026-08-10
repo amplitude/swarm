@@ -504,4 +504,145 @@ describe('FallbackProvider', () => {
       expect(info.fallbackReason).toBeNull();
     });
   });
+
+  describe('escalateForCapabilityFailure()', () => {
+    let provider: FallbackProvider;
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+      provider = new FallbackProvider();
+      originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [{ name: 'qwen2.5-coder:0.5b' }],
+        }),
+      });
+    });
+
+    afterEach(async () => {
+      globalThis.fetch = originalFetch;
+      await provider.unload();
+    });
+
+    // -------------------------------------------------------------------
+    // Guard: rejected before primary active
+    // -------------------------------------------------------------------
+
+    it('rejects escalation when no primary model is active', async () => {
+      await expect(
+        provider.escalateForCapabilityFailure('0.5B tool-call failure'),
+      ).rejects.toThrow('no primary model is currently active');
+
+      expect(provider.getFallbackAttempted()).toBe(false);
+      expect(provider.getLoadedModel()).toBeNull();
+    });
+
+    // -------------------------------------------------------------------
+    // Guard: rejected on non-capability reasons
+    // -------------------------------------------------------------------
+
+    it('rejects escalation on cancellation reason', async () => {
+      // Load primary first
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+
+      await expect(
+        provider.escalateForCapabilityFailure('user cancelled the request'),
+      ).rejects.toThrow('reason must be capability-related');
+
+      expect(provider.getFallbackAttempted()).toBe(false);
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+    });
+
+    it('rejects escalation on generic error reason', async () => {
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+
+      await expect(
+        provider.escalateForCapabilityFailure('network error occurred'),
+      ).rejects.toThrow('reason must be capability-related');
+
+      expect(provider.getFallbackAttempted()).toBe(false);
+    });
+
+    it('rejects escalation on auth error reason', async () => {
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+
+      await expect(
+        provider.escalateForCapabilityFailure('HTTP 401 Unauthorized'),
+      ).rejects.toThrow('reason must be capability-related');
+
+      expect(provider.getFallbackAttempted()).toBe(false);
+    });
+
+    // -------------------------------------------------------------------
+    // Guard: rejected after already fallback
+    // -------------------------------------------------------------------
+
+    it('rejects escalation when already on fallback', async () => {
+      // Load primary first
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+
+      // First escalation should work
+      await provider.escalateForCapabilityFailure('0.5B capability check failed');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getFallbackAttempted()).toBe(true);
+
+      // Second escalation must be rejected (already on fallback).
+      // Use a capability-related reason so the reason guard passes first.
+      await expect(
+        provider.escalateForCapabilityFailure('second escalation: still failing capability'),
+      ).rejects.toThrow('already running on a fallback model');
+
+      // State unchanged
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+    });
+
+    // -------------------------------------------------------------------
+    // Successful escalation flow
+    // -------------------------------------------------------------------
+
+    it('successfully escalates from 0.5B to 1.5B with transition evidence', async () => {
+      // Load primary 0.5B
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+      expect(provider.isLoaded()).toBe(true);
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getFallbackAttempted()).toBe(false);
+
+      // No previous active before any escalation
+      expect(provider.getPreviousActiveModelId()).toBeNull();
+
+      // Escalate
+      await provider.escalateForCapabilityFailure('0.5B tool call capability insufficient');
+
+      // Verify transition evidence
+      expect(provider.getPreviousActiveModelId()).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(provider.getFallbackAttempted()).toBe(true);
+
+      const info = provider.getFallbackInfo();
+      expect(info.activeModelId).toBe('ollama/qwen2.5-coder:1.5b');
+      expect(info.fallbackReason).toContain('Capability escalation');
+      expect(info.fallbackReason).toContain('0.5B tool call capability insufficient');
+      expect(info.fallbackReason).toContain('ollama/qwen2.5-coder:0.5b');
+      expect(info.fallbackReason).toContain('ollama/qwen2.5-coder:1.5b');
+    });
+
+    it('records correct transition for 0.5B -> 1.5B (exact model strings)', async () => {
+      await provider.load('ollama/qwen2.5-coder:0.5b');
+      expect(provider.getLoadedModel()).toBe('ollama/qwen2.5-coder:0.5b');
+
+      await provider.escalateForCapabilityFailure('0.5B cannot produce valid tool calls');
+
+      // Exact transition proof
+      const previous = provider.getPreviousActiveModelId();
+      const current = provider.getLoadedModel();
+      expect(previous).toBe('ollama/qwen2.5-coder:0.5b');
+      expect(current).toBe('ollama/qwen2.5-coder:1.5b');
+      // Must not be null -> 1.5B
+      expect(previous).not.toBeNull();
+      expect(previous).toBeDefined();
+    });
+  });
 });

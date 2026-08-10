@@ -52,6 +52,11 @@ const MODEL_PATTERNS = [
 // Lines that are in model-constants.ts — the only place auto model literals should be defined
 const CENTRALIZED_FILE = 'src/llm/model-constants.ts';
 
+// Files that ARE the centralized constants source — all defs here are intentional
+const CENTRALIZED_SOURCE_FILES = [
+  'src/llm/model-constants.ts',
+];
+
 // Files that are exempt from auto-path violations (tests, capability mappings, re-exports)
 const EXEMPT_AUTO_PATH_FILES = [
   'src/llm/model-capabilities.ts',     // capability feature-flags, not auto-path definitions
@@ -314,9 +319,10 @@ for (const f of allFindings) {
   // Determine file category
   const isTestFile = f.file.includes('__tests__');
   const isExemptFile = EXEMPT_AUTO_PATH_FILES.includes(f.file);
-  const isProductionSrc = !isTestFile && !isExemptFile && f.file.startsWith('src/') && !f.file.includes('tailwind.config') && !f.file.includes('vite.config') && !f.file.includes('vitest.config');
+  const isCentralizedFile = CENTRALIZED_SOURCE_FILES.includes(f.file);
+  const isProductionSrc = !isTestFile && !isExemptFile && !isCentralizedFile && f.file.startsWith('src/') && !f.file.includes('tailwind.config') && !f.file.includes('vite.config') && !f.file.includes('vitest.config');
 
-  // Only flag violations in production source files (not tests, not exempt files)
+  // Only flag violations in production source files (not tests, not exempt files, not centralized source)
   if (isProductionSrc) {
     // >1.5B / MLC model IDs in production source outside centralized
     if (f.type.includes('EXPERT-ONLY') && !f.type.includes('centralized')) {

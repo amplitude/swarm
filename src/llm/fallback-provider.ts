@@ -192,15 +192,94 @@ export class FallbackProvider implements LLMProvider {
    * capability check in production, this lets tests prove the full 0.5B→1.5B
    * transition works end-to-end.
    */
-  private _simulateCapabilityCheckFailure: boolean = false;
+  /**
+   * Previous active model before escalation (for transition evidence).
+   */
+  private previousActiveModelId: string | null = null;
 
   /**
-   * Enable simulated primary failure for the next load() call.
-   * After load() completes (whether fallback triggered or not), the flag resets.
-   * Marked as deliberately simulated in output.
+   * Escalate from the currently active primary model to the configured fallback
+   * due to a capability failure.
+   *
+   * REQUIREMENTS (enforced by guards):
+   * - The primary model MUST be currently active (loaded successfully).
+   * - The reason MUST be capability-related (not cancellation or other errors).
+   * - The active model MUST NOT already be a fallback model.
+   *
+   * Workflow:
+   * 1. Records previous active model ID.
+   * 2. Unloads the current OllamaProvider.
+   * 3. Looks up the configured fallback model (from FALLBACK_MAP or DEFAULT_FALLBACK_MODEL_ID).
+   * 4. Loads the fallback model via a new OllamaProvider.
+   * 5. Updates activeModelId and records transition evidence.
+   *
+   * @param reason - Human-readable reason for escalation (e.g. "0.5B failed to produce tool calls in 2 attempts").
+   * @throws Error if preconditions are not met or fallback load fails.
    */
-  simulatePrimaryFailureForTest(): void {
-    this._simulateCapabilityCheckFailure = true;
+  async escalateForCapabilityFailure(reason: string): Promise<void> {
+    // --- Guard 1: Primary must be active ---
+    if (!this.activeModelId || !this.activeProvider.isLoaded()) {
+      throw new Error(
+        'Cannot escalate: no primary model is currently active. ' +
+        'Load a primary model first via load().',
+      );
+    }
+
+    // --- Guard 2: Reason must be capability-related ---
+    const reasonLower = reason.toLowerCase();
+    const capabilityKeywords = ['capability', 'tool call', 'tool-call', 'feature', 'unsupported', 'incompatible'];
+    const isCapabilityReason = capabilityKeywords.some((kw) => reasonLower.includes(kw));
+    if (!isCapabilityReason) {
+      throw new Error(
+        `Cannot escalate: reason must be capability-related. ` +
+        `Got: "${reason}". Expected one of: ${capabilityKeywords.join(', ')}`,
+      );
+    }
+
+    // --- Guard 3: Must not already be on fallback ---
+    if (this.fallbackAttempted) {
+      throw new Error(
+        'Cannot escalate: already running on a fallback model. ' +
+        `Active model is "${this.activeModelId}" which was loaded via a previous fallback.`,
+      );
+    }
+
+    const currentModelId = this.activeModelId;
+    const fallbackModelId = this.getFallbackModelId(currentModelId);
+
+    if (!fallbackModelId) {
+      throw new Error(
+        `Cannot escalate: no fallback configured for "${currentModelId}".`,
+      );
+    }
+
+    // --- Record previous ---
+    this.previousActiveModelId = currentModelId;
+
+    // --- Unload current ---
+    await this.activeProvider.unload().catch(() => {});
+    this.activeProvider = null!;
+
+    // --- Load fallback ---
+    const fallbackProvider = new OllamaProvider();
+    await fallbackProvider.load(fallbackModelId, (_progress, text) => {
+      console.log(`[FallbackProvider] Escalating from "${currentModelId}" to "${fallbackModelId}": ${text}`);
+    });
+
+    // --- Update state ---
+    this.activeProvider = fallbackProvider;
+    this.primaryModelId = currentModelId;
+    this.activeModelId = fallbackModelId;
+    this.fallbackAttempted = true;
+    this.fallbackReason = `Capability escalation: primary "${currentModelId}" → fallback "${fallbackModelId}". Reason: ${reason}`;
+  }
+
+  /**
+   * Get the model ID that was active before the last escalation.
+   * Returns null if no escalation has occurred.
+   */
+  getPreviousActiveModelId(): string | null {
+    return this.previousActiveModelId;
   }
 
   /**
@@ -224,22 +303,9 @@ export class FallbackProvider implements LLMProvider {
     this.fallbackAttempted = false;
     this.fallbackReason = null;
 
-    // Check for test-simulated capability-check failure
-    const simulateFailure = this._simulateCapabilityCheckFailure;
-    this._simulateCapabilityCheckFailure = false; // one-shot
-
     // Try the primary provider
     const primaryProvider = new OllamaProvider();
     try {
-      if (simulateFailure) {
-        // Deliberately simulated: emit the exact error string that classifyLoadError
-        // recognizes as 'model' (eligible for fallback). This exercises the complete
-        // production fallback chain even when the real 0.5B model is available.
-        const simulatedError = new Error(
-          'capability check failed: primary model "' + modelId + '" does not support required features',
-        );
-        throw simulatedError;
-      }
       await primaryProvider.load(modelId, onProgress);
       // Primary succeeded
       this.activeProvider = primaryProvider;

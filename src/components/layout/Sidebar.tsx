@@ -1,4 +1,4 @@
-import { useAppStore, switchAgent } from '../../store/app-store';
+import { useAppStore, switchAgent, switchSession } from '../../store/app-store';
 import type { AgentType } from '../../types/agent';
 import {
   MessageSquare,
@@ -12,6 +12,7 @@ import {
   Palette,
   Bot,
   Trash2,
+  FolderOpen,
 } from 'lucide-react';
 
 const AGENTS: { id: AgentType; name: string; icon: typeof Bot; color: string }[] = [
@@ -35,15 +36,19 @@ export function Sidebar() {
   const deleteConversation = useAppStore((s) => s.deleteConversation);
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const createSession = useAppStore((s) => s.createSession);
+  const deleteSession = useAppStore((s) => s.deleteSession);
+  const renameSession = useAppStore((s) => s.renameSession);
+  const getConversationsBySession = useAppStore((s) => s.getConversationsBySession);
 
   if (!sidebarOpen) return null;
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
-  // All conversations (session association through activeAgent for now)
-  const sessionConversations = conversations;
-
-  // Conversations filtered by active agent
+  // Conversations filtered by active session AND active agent
+  const sessionConversations = activeSessionId
+    ? getConversationsBySession(activeSessionId)
+    : conversations;
   const agentConversations = sessionConversations.filter(
     (c) => c.activeAgent === activeAgent,
   );
@@ -61,6 +66,65 @@ export function Sidebar() {
             {activeSession.name}
           </span>
         )}
+      </div>
+
+      {/* Sessions */}
+      <div className="px-3 pt-3 pb-1">
+        <span className="px-1 text-2xs font-medium uppercase tracking-wide text-text-tertiary">
+          Sessions
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5 px-2">
+        {sessions.map((session) => (
+          <div
+            key={session.id}
+            className={`group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm cursor-pointer transition-colors ${
+              activeSessionId === session.id
+                ? 'bg-surface-overlay text-text-primary'
+                : 'text-text-secondary hover:bg-surface-raised hover:text-text-primary'
+            }`}
+            onClick={() => switchSession(session.id)}
+          >
+            <FolderOpen size={13} className="shrink-0 text-text-tertiary" />
+            <span className="truncate font-medium">{session.name}</span>
+            {activeSessionId === session.id && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const name = prompt('Session name:', session.name);
+                  if (name && name.trim()) {
+                    renameSession(session.id, name.trim());
+                  }
+                }}
+                className="ml-auto hidden shrink-0 rounded p-0.5 text-text-tertiary hover:bg-surface-raised group-hover:block"
+                title="Rename"
+              >
+                <span className="text-2xs">✎</span>
+              </button>
+            )}
+            {sessions.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`Delete session "${session.name}" and all its conversations?`)) {
+                    deleteSession(session.id);
+                  }
+                }}
+                className="ml-auto hidden shrink-0 rounded p-0.5 text-text-tertiary hover:bg-danger-500/20 hover:text-danger-400 group-hover:block"
+                title="Delete session"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          onClick={() => createSession()}
+          className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
+        >
+          <Plus size={12} />
+          New session
+        </button>
       </div>
 
       {/* Agent List */}
@@ -102,7 +166,7 @@ export function Sidebar() {
           Conversations
         </span>
         <button
-          onClick={() => createConversation(undefined, activeAgent)}
+          onClick={() => createConversation(undefined, activeAgent, activeSessionId || undefined)}
           className="rounded-md p-1 text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
           title="New conversation"
         >

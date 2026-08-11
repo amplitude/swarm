@@ -34,6 +34,9 @@ export function MessageList() {
       proposal.status = 'approved';
       resolveDecision(proposal.id, 'approve-once');
       setActiveAgent(proposal.toAgent);
+      // Persist the agent change to the conversation record in IndexedDB
+      const store = useAppStore.getState();
+      store.updateConversationAgent(conversationId, proposal.toAgent);
       addMessage(conversationId, {
         conversationId,
         role: 'system',
@@ -80,6 +83,9 @@ export function MessageList() {
       proposal.redirectedTo = redirectTo;
       resolveDecision(proposal.id, 'approve-once');
       setActiveAgent(redirectTo);
+      // Persist agent change to conversation record
+      const store = useAppStore.getState();
+      store.updateConversationAgent(conversationId, redirectTo);
       addMessage(conversationId, {
         conversationId,
         role: 'system',

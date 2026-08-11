@@ -9,7 +9,7 @@ export interface ConversationSlice {
   conversations: Conversation[];
   activeConversationId: string | null;
 
-  createConversation: (title?: string, agentType?: import('../../types/agent').AgentType) => string;
+  createConversation: (title?: string, agentType?: import('../../types/agent').AgentType, sessionId?: string) => string;
   setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -19,6 +19,9 @@ export interface ConversationSlice {
   pushMessages: (conversationId: string, messages: Message[]) => void;
   /** Update the content of an existing message (for streaming tokens) */
   updateMessageContent: (conversationId: string, messageId: string, content: string) => void;
+  /** Update the active agent on a conversation (persists to DB) */
+  updateConversationAgent: (conversationId: string, agent: import('../../types/agent').AgentType) => void;
+  getConversationsBySession: (sessionId: string) => Conversation[];
   getActiveConversation: () => Conversation | undefined;
   hydrateConversations: () => Promise<void>;
 }
@@ -30,7 +33,7 @@ export const createConversationSlice: StateCreator<ConversationSlice, [], [], Co
   conversations: [],
   activeConversationId: null,
 
-  createConversation: (title, agentType) => {
+  createConversation: (title, agentType, sessionId) => {
     const id = nanoid();
     const now = Date.now();
     const conversation: Conversation = {
@@ -38,6 +41,7 @@ export const createConversationSlice: StateCreator<ConversationSlice, [], [], Co
       title: title || 'New conversation',
       messages: [],
       activeAgent: agentType ?? 'manager',
+      sessionId: sessionId || 'default',
       createdAt: now,
       updatedAt: now,
     };
@@ -132,6 +136,21 @@ export const createConversationSlice: StateCreator<ConversationSlice, [], [], Co
     }));
     // Persist updated content to IndexedDB (debounced naturally by streaming cadence)
     messageRepo.update(messageId, { content }).catch(console.error);
+  },
+
+  updateConversationAgent: (conversationId, agent) => {
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId
+          ? { ...c, activeAgent: agent, updatedAt: Date.now() }
+          : c,
+      ),
+    }));
+    conversationRepo.update(conversationId, { activeAgent: agent, updatedAt: Date.now() }).catch(console.error);
+  },
+
+  getConversationsBySession: (sessionId: string) => {
+    return get().conversations.filter((c) => c.sessionId === sessionId);
   },
 
   getActiveConversation: () => {

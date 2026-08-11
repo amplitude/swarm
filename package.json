@@ -7,16 +7,22 @@
     "dev": "vite",
     "build": "tsc -b && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview",
+    "build:e2e": "vite build --config vite.e2e.config.ts",
+    "preview:e2e": "node scripts/preview-e2e.mjs",
+    "test:e2e": "playwright test",
+    "audit:prod": "pnpm audit --prod",
+    "audit:all": "pnpm audit",
+    "bundle:assert": "node scripts/assert-bundle.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@mlc-ai/web-llm": "^0.2.78",
     "@monaco-editor/react": "^4.7.0",
     "dexie": "^4.0.11",
     "lucide-react": "^0.474.0",
-    "mermaid": "^11.4.1",
+    "mermaid": "^11.16.1",
     "nanoid": "^5.1.2",
     "quickjs-emscripten": "^0.32.0",
     "react": "^18.3.1",
@@ -35,10 +41,14 @@
       "dompurify": ">=3.3.2",
       "mermaid@>=10.9.0-rc.1 <10.9.4": ">=10.9.4",
       "nanoid@<3.3.8": ">=3.3.8",
-      "nanoid@>=4.0.0 <5.0.9": ">=5.0.9"
+      "nanoid@>=4.0.0 <5.1.16": ">=5.1.16",
+      "picomatch": ">=4.0.4",
+      "lodash-es": ">=4.18.0",
+      "immutable": ">=4.3.9"
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.1.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

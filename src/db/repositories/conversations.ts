@@ -6,6 +6,7 @@ function toDBConversation(conv: Conversation): DBConversation {
     id: conv.id,
     title: conv.title,
     activeAgent: conv.activeAgent,
+    sessionId: conv.sessionId,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
   };
@@ -16,6 +17,7 @@ function fromDBConversation(row: DBConversation): Omit<Conversation, 'messages'>
     id: row.id,
     title: row.title,
     activeAgent: row.activeAgent as Conversation['activeAgent'],
+    sessionId: row.sessionId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -36,7 +38,7 @@ export const conversationRepo = {
     await db.conversations.add(toDBConversation(conv));
   },
 
-  async update(id: string, changes: Partial<Pick<Conversation, 'title' | 'activeAgent' | 'updatedAt'>>): Promise<void> {
+  async update(id: string, changes: Partial<Pick<Conversation, 'title' | 'activeAgent' | 'sessionId' | 'updatedAt'>>): Promise<void> {
     await db.conversations.update(id, changes);
   },
 
@@ -46,5 +48,14 @@ export const conversationRepo = {
       await db.artifacts.where('conversationId').equals(id).delete();
       await db.conversations.delete(id);
     });
+  },
+
+  async getBySession(sessionId: string): Promise<Omit<Conversation, 'messages'>[]> {
+    const rows = await db.conversations
+      .where('sessionId')
+      .equals(sessionId)
+      .reverse()
+      .sortBy('updatedAt');
+    return rows.map(fromDBConversation);
   },
 };

@@ -44,15 +44,13 @@ export const sessionRepo = {
 
   async remove(id: string): Promise<void> {
     await db.transaction('rw', [db.sessions, db.conversations, db.messages, db.tasks, db.artifacts], async () => {
-      // Remove associated conversations, messages, tasks, artifacts
-      const conversations = await db.conversations.where('id').anyOf(
-        (await db.conversations.toArray()).filter(c => c.id.startsWith(id)).map(c => c.id)
-      ).toArray();
-      for (const conv of conversations) {
+      // Remove associated conversations, messages, artifacts
+      const sessionConversations = await db.conversations.where('sessionId').equals(id).toArray();
+      for (const conv of sessionConversations) {
         await db.messages.where('conversationId').equals(conv.id).delete();
         await db.artifacts.where('conversationId').equals(conv.id).delete();
       }
-      await db.conversations.where('id').anyOf(conversations.map(c => c.id)).delete();
+      await db.conversations.where('sessionId').equals(id).delete();
       await db.tasks.where('sessionId').equals(id).delete();
       await db.sessions.delete(id);
     });

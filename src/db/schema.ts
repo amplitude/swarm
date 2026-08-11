@@ -4,6 +4,7 @@ export interface DBConversation {
   id: string;
   title: string;
   activeAgent: string;
+  sessionId: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -112,6 +113,24 @@ db.version(3).stores({
       schemaVersion: 1,
     });
   }
+});
+
+db.version(4).stores({
+  conversations: 'id, sessionId, title, createdAt, updatedAt',
+  messages: 'id, conversationId, role, agentType, timestamp',
+  artifacts: 'id, conversationId, type, name, creatorAgent, createdAt',
+  settings: 'key',
+  sessions: 'id, sortOrder, createdAt, updatedAt',
+  tasks: 'id, sessionId, conversationId, status, createdAt, updatedAt',
+}).upgrade(async (tx) => {
+  // Add sessionId to existing conversations
+  const defaultSession = await tx.table('sessions').get('default');
+  const sessionId = defaultSession?.id || 'default';
+  await tx.table('conversations').toCollection().modify((conv) => {
+    if (!conv.sessionId) {
+      conv.sessionId = sessionId;
+    }
+  });
 });
 
 export { db };

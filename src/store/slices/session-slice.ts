@@ -52,10 +52,16 @@ export const createSessionSlice: StateCreator<SessionSlice, [], [], SessionSlice
   },
 
   deleteSession: (id) => {
-    set((s) => ({
-      sessions: s.sessions.filter((sess) => sess.id !== id),
-      activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
-    }));
+    // If deleting the active session, select the next one
+    const remaining = get().sessions.filter((sess) => sess.id !== id);
+    const wasActive = get().activeSessionId === id;
+    const nextActiveId = wasActive ? (remaining[0]?.id ?? null) : get().activeSessionId;
+
+    set({
+      sessions: remaining,
+      activeSessionId: nextActiveId,
+    });
+
     sessionRepo.remove(id).catch(console.error);
   },
 

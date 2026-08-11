@@ -1,5 +1,5 @@
 import type { LLMProvider } from './engine';
-import { WebLLMProvider } from './web-llm-provider';
+import { WebLLMProvider } from '@/llm/web-llm-provider';
 import { CompatibilityLayer } from './compatibility-layer';
 import { DEFAULT_MODEL } from './model-constants';
 

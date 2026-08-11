@@ -6,6 +6,7 @@ export interface Conversation {
   title: string;
   messages: Message[];
   activeAgent: AgentType;
+  sessionId: string;
   createdAt: number;
   updatedAt: number;
 }

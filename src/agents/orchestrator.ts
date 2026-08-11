@@ -7,12 +7,6 @@ import { createHandoffProposal, buildHandoffMessages } from './handoff';
 import { routeMessage } from './router';
 import { buildSystemPrompt } from './prompt-builder';
 import { toolRegistry } from '@/tools/registry';
-import {
-  createTraceId,
-  captureTrace,
-  captureToolCall,
-  startTimer,
-} from '@/utils/llm-analytics';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -102,8 +96,7 @@ export class Orchestrator {
     activeAgent: AgentType,
     enabledToolIds?: Set<string>,
   ): Promise<AgentTurn> {
-    const traceId = createTraceId();
-    const turnTimer = startTimer();
+    const traceId = nanoid();
 
     const turn: AgentTurn = {
       agentId: activeAgent,
@@ -116,7 +109,7 @@ export class Orchestrator {
     const systemPrompt = buildSystemPrompt(agent);
     const conversationId = conversationMessages[0]?.conversationId ?? '';
 
-    // Pass trace ID to the LLM adapter for $ai_generation tracking
+    // Pass trace ID to the LLM adapter
     if (this.llm.setTraceId) {
       this.llm.setTraceId(traceId);
     }
@@ -194,7 +187,6 @@ export class Orchestrator {
               turn.messages.push(proposalMsg);
 
               // STOP the loop -- user must approve/reject
-              this.emitTrace(traceId, turn, activeAgent, turnTimer());
               return turn;
             }
 
@@ -216,16 +208,7 @@ export class Orchestrator {
 
           // ---- Regular tool: execute inline ----
           this.callbacks.onToolCallStart?.(toolCall);
-          const toolTimer = startTimer();
           const result = await this.toolExecutor.execute(toolCall.toolId, toolCall.parameters);
-          captureToolCall({
-            traceId,
-            toolName: toolCall.toolId,
-            toolParameters: toolCall.parameters,
-            result: { success: result.success, output: result.output, error: result.error },
-            durationMs: toolTimer(),
-            agentType: activeAgent,
-          });
           this.callbacks.onToolCallEnd?.(toolCall, result);
 
           // Record as conversation messages
@@ -271,7 +254,6 @@ export class Orchestrator {
           timestamp: Date.now(),
         };
         turn.messages.push(assistantMsg);
-        this.emitTrace(traceId, turn, activeAgent, turnTimer());
         return turn;
       }
 
@@ -295,26 +277,7 @@ export class Orchestrator {
       turn.messages.push(warningMsg);
     }
 
-    this.emitTrace(traceId, turn, activeAgent, turnTimer());
     return turn;
-  }
-
-  private emitTrace(
-    traceId: string,
-    turn: AgentTurn,
-    agentType: AgentType,
-    durationMs: number,
-  ): void {
-    captureTrace({
-      traceId,
-      agentType,
-      durationMs,
-      iterations: turn.iterations,
-      toolCalls: turn.toolCalls,
-      hasHandoff: !!turn.pendingHandoff,
-      handoffTarget: turn.pendingHandoff?.toAgent,
-      hasFinalResponse: !!turn.finalResponse,
-    });
   }
 
   // -----------------------------------------------------------------------

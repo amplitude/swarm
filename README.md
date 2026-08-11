@@ -1,26 +1,26 @@
-# Swarm — Zero-Setup Local-First Agent App Template
+# Swarm — Coherent Local-First Chat Template
 
-**Fork or use this template to build your own local-first agent app.**  
-No paid inference API, no cloud backend, no API keys — just your browser.  
-The default model (`SmolLM2-360M-Instruct-q4f16_1-MLC`, ~376 MB) is downloaded and cached by your browser automatically via WebGPU.
+**A clean, familiar chat app template for local-first agent applications.**  
+No paid inference API, no cloud backend, no API keys, no local services — just your browser.  
+The default model (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) is downloaded and cached by your browser automatically via WebGPU.
 
 ---
 
 ## Why this approach?
 
-| Concern | Swarm (WebLLM) | Cloud API | Ollama (expert mode) |
-|---------|----------------|-----------|----------------------|
-| Inference cost | $0 (your GPU + browser) | Per-token billing | $0 (your compute) |
-| Setup | Zero — opens and runs | API key + account | Install Ollama + pull model |
-| API keys | None needed | Requires account + key | None needed |
-| Privacy | Everything in your browser | Data sent to provider | Local machine only |
-| Offline | Works fully offline | Requires internet | Works fully offline |
-| Model quality | Intentionally low (360M params) | High (GPT-4, Claude) | Low (0.5B) to medium (7B) |
-| First-run delay | One-time ~376 MB download | None | One-time ~258 MB download |
+| Concern | Swarm (WebLLM) | Cloud API |
+|---------|----------------|-----------|
+| Inference cost | $0 (your GPU + browser) | Per-token billing |
+| Setup | Zero — opens and runs | API key + account |
+| API keys | None needed | Requires account + key |
+| Privacy | Everything in your browser | Data sent to provider |
+| Offline | Works fully offline | Requires internet |
+| Model quality | **Intentionally low** (135M params) | High (GPT-4, Claude) |
+| First-run delay | One-time ~180 MB download | None |
 
-**Zero-setup, intentionally low quality.** The default model is the smallest available in `@mlc-ai/web-llm` v0.2.82. Browser downloads and caches it automatically. Demo mode provides template responses when WebGPU is unavailable.
+**Zero-setup, honestly documented quality.** The default model (`SmolLM2-135M-Instruct-q0f16-MLC`) is the *smallest* available chat/instruct model in `@mlc-ai/web-llm` v0.2.82 at 135M parameters in full float16 precision. It is intentionally low quality — suitable for prototyping, layout testing, and simple conversations. It will struggle with complex reasoning, multi-step tasks, and consistent tool calling.
 
-For higher quality, select larger models in Settings, or switch to Ollama (expert mode).
+For better quality, select larger models in Settings (e.g., `SmolLM2-360M-Instruct-q4f16_1-MLC` at ~376 MB).
 
 ---
 
@@ -31,8 +31,8 @@ pnpm install
 pnpm dev
 ```
 
-Open **http://localhost:5173/swarm/** in Chrome 113+ (or any WebGPU-enabled browser).  
-No Ollama, no API keys, no configuration.
+Open **http://localhost:5173/** in Chrome 113+ (or any WebGPU-enabled browser).  
+No Ollama, no API keys, no configuration, no demo mode.
 
 ---
 
@@ -43,9 +43,7 @@ No Ollama, no API keys, no configuration.
 | Framework | React 18 + TypeScript |
 | Build | Vite 6 |
 | Styling | Tailwind CSS 4 |
-| LLM (default) | WebLLM / WebGPU (`SmolLM2-360M-Instruct-q4f16_1-MLC`, ~376 MB) |
-| LLM (expert) | Ollama (local, requires install) — selectable in Settings |
-| LLM (fallback) | Demo mode — deterministic templates when WebGPU unavailable |
+| LLM | WebLLM / WebGPU (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) |
 | State | Zustand + Dexie.js/IndexedDB |
 | Code sandbox | QuickJS WASM |
 | Diagrams | Mermaid.js |
@@ -55,42 +53,85 @@ No Ollama, no API keys, no configuration.
 
 | File / Directory | What it controls |
 |---|---|
+| `src/app/App.tsx` | Top-level app composition |
+| `src/components/layout/` | Three-panel layout (sidebar, chat, inspector) |
+| `src/components/chat/` | Message list, bubbles, composer |
+| `src/components/right-panel/` | Agent inspector + task management |
+| `src/components/settings/` | Model config, agent prompts, data export |
 | `src/agents/` | Agent definitions, system prompts, handoff logic |
-| `src/llm/` | LLM providers, model config, fallback chain |
+| `src/llm/` | WebLLM provider, model constants, capabilities |
 | `src/tools/` | Tool definitions each agent can use |
-| `src/skills/` | Agent skill modules |
-| `src/components/` | React UI components |
-| `src/store/` | Zustand state slices |
+| `src/store/` | Zustand state slices (conversations, sessions, tasks, agents) |
 | `src/db/` | IndexedDB persistence schema |
 | `src/types/` | TypeScript type definitions |
-| `src/styles/` | CSS design system / global styles |
-| `tailwind.config.ts` | Custom theme, colors, spacing, animations |
-| `vite.config.ts` | Build config, base URL, PWA manifest |
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────┐
+│                Model Status Bar                       │
+├──────────┬───────────────────────────┬───────────────┤
+│          │                           │               │
+│ Sidebar  │      Chat / Messages      │  Inspector    │
+│ (agents, │                           │  (collapsed)  │
+│ threads) │      Composer (bottom)    │  - Agent info │
+│          │                           │  - Tasks      │
+│          │                           │               │
+├──────────┴───────────────────────────┴───────────────┤
+│                    Status Bar                         │
+└──────────────────────────────────────────────────────┘
+```
+
+- **Sidebar** (collapsible, ~240px): Agent list with keyboard shortcuts (Cmd+1–5), conversation threads with create/rename/delete.
+- **Chat** (center, fluid): Conversation messages with streaming, handoff approval widgets, and a clean composer with stop/retry.
+- **Inspector** (collapsible right panel, default closed): Active agent status, quick agent handoff, manual task management.
+- **Model Status** (top bar): Non-blocking download progress, error states, and WebGPU availability messaging. Never obscures the app.
+
+---
+
+## Architecture principles
+
+### No fake behavior
+- No DemoProvider or canned assistant responses
+- No "continue without model" path
+- If WebGPU is unavailable, the app shows a clear message and the send button is disabled with an explanation
+- Test adapters exist only in tests and are tree-shaken from production builds
+
+### Real browser inference
+- Only WebLLM provider in production
+- Auto-downloads and caches `SmolLM2-135M-Instruct-q0f16-MLC` on first run
+- No Ollama setup gate or production Ollama requests
+
+### Sessions and threads
+- First install has one empty session and one empty thread
+- Threads are titled from the first user message
+- Drafts persist in sessionStorage
+- Full CRUD with delete confirmation
+
+### Tasks
+- Manual create/edit/assign/complete/delete
+- Associated with threads
+- Never imply model execution
+
+### Agent handoffs
+- Agents propose handoffs, user approves/rejects/redirects
+- Manual handoff persists a timeline event and switches the active agent
+- Never generates fake agent chatter
 
 ---
 
 ## Model configuration
 
-### Default: WebLLM (zero-setup, no configuration)
+Currently supported model: **WebLLM** (only production provider).
 
-- **Model:** `SmolLM2-360M-Instruct-q4f16_1-MLC` — verified as the smallest chat/instruct model in `@mlc-ai/web-llm` v0.2.82.
-- **Size:** ~376 MB VRAM, estimated ~200 MB download.
-- **Inference:** Browser WebGPU (Chrome 113+, Edge 113+).
-- **Caching:** Automatic via browser Cache API. Downloaded once.
-- **Cost:** $0. No API key, no paid API.
+| Model | Params | VRAM | Download | Quality |
+|-------|--------|------|----------|---------|
+| `SmolLM2-135M-Instruct-q0f16-MLC` (default) | 135M | ~359 MB | ~180 MB | Intentionally low |
+| `SmolLM2-360M-Instruct-q4f16_1-MLC` | 360M | ~376 MB | ~200 MB | Low (better per VRAM) |
+| `Qwen3-4B-q4f16_1-MLC` | 4B | ~3 GB | ~3 GB | Medium (expert, manual) |
+| `Qwen3-8B-q4f16_1-MLC` | 8B | ~5 GB | ~5 GB | Good (expert, manual) |
 
-### Expert: Ollama (requires local install)
-
-Available in Settings → Model → Inference Provider → Ollama.  
-Requires Ollama to be installed and running. See [local-model.md](docs/local-model.md).
-
-### Fallback: Demo mode
-
-When WebGPU is unavailable or WebLLM initialization fails, Swarm enters **Demo Mode** — a deterministic template mode:
-- Clearly labeled "Demo Mode (no AI)"
-- Canned responses for common prompts
-- Full UI remains functional (builder, canvas, navigation)
-- Retry WebLLM and configure Ollama options in status bar
+Select larger models in Settings → Model.
 
 ---
 
@@ -98,15 +139,11 @@ When WebGPU is unavailable or WebLLM initialization fails, Swarm enters **Demo M
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `VITE_LLM_PROVIDER` | `webllm` | Inference provider: `webllm`, `ollama`, or `demo` |
-| `VITE_OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama server URL (only when provider is `ollama`) |
-| `VITE_LLM_MODEL` | `SmolLM2-360M-Instruct-q4f16_1-MLC` | Model ID |
+| `VITE_LLM_MODEL` | `SmolLM2-135M-Instruct-q0f16-MLC` | Model ID override |
 
 Runtime settings (localStorage):
-- `swarm-provider` — `"webllm"`, `"ollama"`, or `"demo"`
-- `swarm-model-id` — model identifier
-- `swarm-ollama-endpoint` — Ollama server URL
-- `swarm-provider-explicit` — set when user makes an explicit provider choice
+- `swarm-model-id` — model identifier override
+- `swarm-last-model` — last loaded model (auto-restored)
 
 ---
 
@@ -123,12 +160,17 @@ pnpm build
 npx tsc --noEmit
 ```
 
+### Test coverage
+- **17 active test files** covering: model registry invariants, provider config, response parsing, state transitions, session CRUD, task CRUD, conversation title, chat flows, store behavior, UI rendering.
+- **E2E tests** (Playwright): run with `npx playwright test` after building.
+- **Test adapter**: available under `VITE_TEST_MODE=true` build flag for deterministic E2E responses. Tree-shaken from production builds.
+
 ---
 
 ## Deployment
 
 Built output in `dist/` — serve with any static file server.  
-The app is deployed as a private GitHub Pages site for authenticated access.  
+The PWA service worker precaches 73 entries (~9.4 MB) for offline use.  
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## License

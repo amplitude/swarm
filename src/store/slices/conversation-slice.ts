@@ -45,6 +45,7 @@ export const createConversationSlice: StateCreator<ConversationSlice, [], [], Co
       conversations: [conversation, ...s.conversations],
       activeConversationId: id,
     }));
+    localStorage.setItem('swarm-last-conversation', id);
     conversationRepo.create(conversation).catch(console.error);
     return id;
   },

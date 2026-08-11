@@ -58,13 +58,12 @@ describe('Blank first run (integration)', () => {
       vramUsageMB: 0,
       sidebarOpen: true,
       theme: 'dark',
-      viewMode: 'chat',
       agentState: {
-        manager: { isThinking: false, lastError: null },
-        general: { isThinking: false, lastError: null },
-        coder: { isThinking: false, lastError: null },
-        pm: { isThinking: false, lastError: null },
-        designer: { isThinking: false, lastError: null },
+        manager: { isThinking: false, currentIteration: 0, pendingToolCalls: [] },
+        general: { isThinking: false, currentIteration: 0, pendingToolCalls: [] },
+        coder: { isThinking: false, currentIteration: 0, pendingToolCalls: [] },
+        pm: { isThinking: false, currentIteration: 0, pendingToolCalls: [] },
+        designer: { isThinking: false, currentIteration: 0, pendingToolCalls: [] },
       },
     });
   });

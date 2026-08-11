@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { Orchestrator } from '@/agents/orchestrator';
 import { LLMChatAdapter } from '@/llm/llm-chat-adapter';
@@ -12,12 +12,20 @@ import { agentDefinitions, getDefaultEnabledTools } from '@/agents/definitions';
 
 const toolExecutor = new RealToolExecutor();
 
+export interface ChatError {
+  type: 'error' | 'unavailable';
+  message: string;
+}
+
 /**
  * Hook that wires up the full chat flow:
- *   user sends message -> orchestrator.runTurn() -> stream tokens -> display response
+ *   user sends message → orchestrator.runTurn() → stream tokens → display response
  */
 export function useChat() {
   const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastMessageRef = useRef<string | null>(null);
+  const [chatError, setChatError] = useState<ChatError | null>(null);
 
   const sendMessage = useCallback(async (text: string) => {
     if (runningRef.current) return;
@@ -26,9 +34,17 @@ export function useChat() {
     const { llmStatus } = store;
 
     if (llmStatus !== 'ready' && llmStatus !== 'generating') {
-      console.warn('LLM not ready, status:', llmStatus);
+      if (llmStatus === 'error' || llmStatus === 'idle') {
+        const errorMsg = llmStatus === 'error'
+          ? 'Model failed to load. Please retry from the status bar.'
+          : 'Model is not loaded. Please wait for the download to complete.';
+        setChatError({ type: 'unavailable', message: errorMsg });
+      }
       return;
     }
+
+    setChatError(null);
+    lastMessageRef.current = text;
 
     const activeAgent = store.activeAgent;
 
@@ -64,6 +80,10 @@ export function useChat() {
     store.setAgentThinking(activeAgent, true);
     runningRef.current = true;
 
+    // Create abort controller for this generation
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
     try {
       // Ensure the shared provider is loaded
       const provider = getSharedProvider();
@@ -79,6 +99,7 @@ export function useChat() {
       // Create the adapter with token streaming
       let streamedContent = '';
       const adapter = new LLMChatAdapter(provider, (token) => {
+        if (abortController.signal.aborted) return;
         streamedContent += token;
         useAppStore.getState().updateMessageContent(convId!, assistantMsgId, streamedContent);
       });
@@ -108,13 +129,23 @@ export function useChat() {
       const enabledToolIds = getDefaultEnabledTools(activeAgent);
       const turn = await orchestrator.runTurn(messages, activeAgent, enabledToolIds);
 
+      // Check if aborted during runTurn
+      if (abortController.signal.aborted) {
+        const currentContent = useAppStore.getState().conversations
+          .find((c) => c.id === convId)
+          ?.messages.find((m) => m.id === assistantMsgId)?.content;
+        useAppStore.getState().updateMessageContent(
+          convId,
+          assistantMsgId,
+          (currentContent || streamedContent) + '\n\n*Generation stopped*',
+        );
+        return;
+      }
+
       // Update the placeholder with the final response
       if (turn.finalResponse) {
         useAppStore.getState().updateMessageContent(convId, assistantMsgId, turn.finalResponse);
-      } else if (streamedContent) {
-        // Content was already streamed via onToken
-      } else {
-        // Remove empty placeholder if no response
+      } else if (!streamedContent) {
         useAppStore.getState().updateMessageContent(
           convId,
           assistantMsgId,
@@ -135,19 +166,65 @@ export function useChat() {
         handleHandoffProposal(convId, turn.pendingHandoff, assistantMsgId);
       }
     } catch (err) {
-      console.error('[useChat] error:', err);
-      useAppStore.getState().updateMessageContent(
-        convId,
-        assistantMsgId,
-        `Error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('[useChat] error:', errorMessage);
+      setChatError({ type: 'error', message: errorMessage });
+
+      // Update the placeholder with the error
+      const currentState = useAppStore.getState();
+      const currentContent = currentState.conversations
+        .find((c) => c.id === convId)
+        ?.messages.find((m) => m.id === assistantMsgId)?.content;
+      if (currentContent === '') {
+        currentState.updateMessageContent(
+          convId,
+          assistantMsgId,
+          `Error: ${errorMessage}`,
+        );
+      }
     } finally {
+      const store = useAppStore.getState();
       store.setAgentThinking(activeAgent, false);
       runningRef.current = false;
+      abortRef.current = null;
     }
   }, []);
 
-  return { sendMessage, isRunning: runningRef.current };
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const retry = useCallback(() => {
+    const lastText = lastMessageRef.current;
+    if (lastText) {
+      // Find and remove the last assistant placeholder message
+      const store = useAppStore.getState();
+      const convId = store.activeConversationId;
+      if (convId) {
+        const conv = store.conversations.find((c) => c.id === convId);
+        if (conv) {
+          const lastAssistantIdx = [...conv.messages].reverse().findIndex(
+            (m) => m.role === 'assistant' && !m.toolCall,
+          );
+          if (lastAssistantIdx >= 0) {
+            const msgToRemove = conv.messages[conv.messages.length - 1 - lastAssistantIdx];
+            if (msgToRemove) {
+              // Remove the assistant message and re-send
+              store.conversations = store.conversations.map((c) =>
+                c.id === convId
+                  ? { ...c, messages: c.messages.filter((m) => m.id !== msgToRemove.id) }
+                  : c,
+              );
+            }
+          }
+        }
+      }
+      setChatError(null);
+      sendMessage(lastText);
+    }
+  }, [sendMessage]);
+
+  return { sendMessage, stop, retry, chatError, clearError: () => setChatError(null), isRunning: runningRef.current };
 }
 
 function handleHandoffProposal(

@@ -33,8 +33,20 @@ export function Sidebar() {
   const setActiveConversation = useAppStore((s) => s.setActiveConversation);
   const createConversation = useAppStore((s) => s.createConversation);
   const deleteConversation = useAppStore((s) => s.deleteConversation);
+  const sessions = useAppStore((s) => s.sessions);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
 
   if (!sidebarOpen) return null;
+
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+
+  // All conversations (session association through activeAgent for now)
+  const sessionConversations = conversations;
+
+  // Conversations filtered by active agent
+  const agentConversations = sessionConversations.filter(
+    (c) => c.activeAgent === activeAgent,
+  );
 
   return (
     <aside className="flex h-full w-sidebar flex-col border-r border-border bg-surface">
@@ -44,6 +56,11 @@ export function Sidebar() {
           <Bot size={14} className="text-white" />
         </div>
         <span className="text-sm font-semibold text-text-primary tracking-tight">Swarm</span>
+        {activeSession && (
+          <span className="ml-auto text-2xs text-text-tertiary truncate max-w-[100px]">
+            {activeSession.name}
+          </span>
+        )}
       </div>
 
       {/* Agent List */}
@@ -93,11 +110,11 @@ export function Sidebar() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-2">
-        {conversations.filter((c) => c.activeAgent === activeAgent).length === 0 ? (
+        {agentConversations.length === 0 ? (
           <p className="px-2.5 py-4 text-xs text-text-tertiary">No conversations yet</p>
         ) : (
           <div className="flex flex-col gap-0.5">
-            {conversations.filter((c) => c.activeAgent === activeAgent).map((conv) => (
+            {agentConversations.map((conv) => (
               <div
                 key={conv.id}
                 className={`group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm cursor-pointer transition-colors ${
@@ -112,7 +129,9 @@ export function Sidebar() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteConversation(conv.id);
+                    if (window.confirm('Delete this conversation?')) {
+                      deleteConversation(conv.id);
+                    }
                   }}
                   className="ml-auto hidden shrink-0 rounded p-0.5 text-text-tertiary hover:bg-danger-500/20 hover:text-danger-400 group-hover:block"
                   title="Delete conversation"

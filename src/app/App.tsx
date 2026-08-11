@@ -4,16 +4,14 @@ import { AppLayout } from '../components/layout/AppLayout';
 import { Header } from '../components/layout/Header';
 import { ChatPanel } from '../components/chat/ChatPanel';
 import { SettingsPanel } from '../components/settings/SettingsPanel';
-import { MissionControl } from '../components/dashboard/MissionControl';
-import { ArtifactPanel } from '../components/canvas/ArtifactPanel';
 import { ModelStatus } from '../components/onboarding/ModelStatus';
+import { InspectorPanel } from '../components/right-panel/InspectorPanel';
 import type { AgentType } from '../types/agent';
 
 const AGENT_KEYS: AgentType[] = ['manager', 'general', 'coder', 'pm', 'designer'];
 
 export function App() {
   const theme = useAppStore((s) => s.theme);
-  const viewMode = useAppStore((s) => s.viewMode);
 
   // Apply theme class on mount
   useEffect(() => {
@@ -39,23 +37,16 @@ export function App() {
 
   return (
     <>
-      {/* Nonblocking model status bar — shows download progress, error, or demo mode.
-          Never obscures the app. Replaces the old full-screen ModelLoadingOverlay. */}
-      <ModelStatus />
-
-      {viewMode === 'dashboard' ? (
-        <MissionControl />
-      ) : (
-        <AppLayout
-          main={
-            <>
-              <Header />
-              <ChatPanel />
-            </>
-          }
-          rightPanel={<ArtifactPanel />}
-        />
-      )}
+      <AppLayout
+        topBar={<ModelStatus />}
+        main={
+          <>
+            <Header />
+            <ChatPanel />
+          </>
+        }
+        rightPanel={<InspectorPanel />}
+      />
       <SettingsPanel />
     </>
   );

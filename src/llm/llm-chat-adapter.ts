@@ -1,10 +1,5 @@
 import type { LLMChat, LLMChatResponse } from '@/agents/orchestrator';
 import type { LLMProvider, LLMRequest } from './engine';
-import {
-  captureGeneration,
-  captureGenerationError,
-  startTimer,
-} from '@/utils/llm-analytics';
 
 /**
  * Adapts a streaming LLMProvider into the non-streaming LLMChat interface
@@ -13,15 +8,14 @@ import {
  * Optionally calls `onToken` for each content chunk so the UI can stream tokens.
  */
 export class LLMChatAdapter implements LLMChat {
-  private traceId: string = '';
 
   constructor(
     private provider: LLMProvider,
     private onToken?: (token: string) => void,
   ) {}
 
-  setTraceId(traceId: string): void {
-    this.traceId = traceId;
+  setTraceId(_traceId: string): void {
+    // Trace ID tracking reserved for future analytics
   }
 
   getModelId(): string | null {
@@ -42,11 +36,6 @@ export class LLMChatAdapter implements LLMChat {
       temperature: request.temperature,
     };
 
-    const model = this.provider.getLoadedModel() ?? 'unknown';
-    const genTimer = startTimer();
-    let timeToFirstTokenMs: number | undefined;
-    let firstTokenRecorded = false;
-
     let content = '';
     let finishReason: string | null = null;
     let toolCalls: LLMChatResponse['toolCalls'] | undefined;
@@ -54,10 +43,6 @@ export class LLMChatAdapter implements LLMChat {
     try {
       for await (const chunk of this.provider.generate(llmRequest)) {
         if (chunk.content) {
-          if (!firstTokenRecorded) {
-            timeToFirstTokenMs = genTimer();
-            firstTokenRecorded = true;
-          }
           content += chunk.content;
           this.onToken?.(chunk.content);
         }
@@ -78,35 +63,12 @@ export class LLMChatAdapter implements LLMChat {
         finishReason === 'tool_calls' ? 'tool_calls' :
         finishReason === 'length' ? 'length' : 'stop';
 
-      const result: LLMChatResponse = {
+      return {
         content: content || null,
         toolCalls,
         finishReason: mappedReason,
       };
-
-      captureGeneration({
-        traceId: this.traceId,
-        model,
-        inputMessages: request.messages,
-        outputContent: result.content,
-        toolCalls: result.toolCalls,
-        finishReason: mappedReason,
-        latencyMs: genTimer(),
-        timeToFirstTokenMs,
-        temperature: request.temperature,
-        tools: request.tools,
-      });
-
-      return result;
     } catch (error) {
-      captureGenerationError({
-        traceId: this.traceId,
-        model,
-        inputMessages: request.messages,
-        error: error instanceof Error ? error.message : String(error),
-        latencyMs: genTimer(),
-        temperature: request.temperature,
-      });
       throw error;
     }
   }

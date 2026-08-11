@@ -3,7 +3,6 @@ import type { Artifact } from '../../types/tool';
 
 export type ActivePanel = 'chat' | 'canvas' | 'preview';
 export type Theme = 'dark' | 'light';
-export type ViewMode = 'dashboard' | 'chat';
 
 export interface UISlice {
   sidebarOpen: boolean;
@@ -11,7 +10,6 @@ export interface UISlice {
   activePanel: ActivePanel;
   theme: Theme;
   settingsOpen: boolean;
-  viewMode: ViewMode;
   selectedArtifact: Artifact | null;
 
   toggleSidebar: () => void;
@@ -22,7 +20,6 @@ export interface UISlice {
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setSettingsOpen: (open: boolean) => void;
-  setViewMode: (mode: ViewMode) => void;
   openArtifact: (artifact: Artifact) => void;
   closeArtifact: () => void;
 }
@@ -31,7 +28,6 @@ const getInitialTheme = (): Theme => {
   if (typeof window === 'undefined') return 'dark';
   const stored = localStorage.getItem('swarm-theme');
   if (stored === 'light' || stored === 'dark') return stored;
-  // Detect system preference via matchMedia
   if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
   return 'dark';
 };
@@ -42,7 +38,6 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   activePanel: 'chat',
   theme: getInitialTheme(),
   settingsOpen: false,
-  viewMode: 'dashboard',
   selectedArtifact: null,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -65,7 +60,6 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       return { theme: next };
     }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
-  setViewMode: (mode) => set({ viewMode: mode }),
   openArtifact: (artifact) => set({ selectedArtifact: artifact, rightPanelOpen: true }),
   closeArtifact: () => set({ selectedArtifact: null, rightPanelOpen: false }),
 });

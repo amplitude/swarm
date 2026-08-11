@@ -36,12 +36,9 @@ export interface LLMProvider {
 
 export {
   MLC_AUTO_MODELS,
-  OLLAMA_AUTO_MODELS,
   MLC_EXPERT_MODELS,
   RECOMMENDED_MODELS,
   DEFAULT_MODEL,
-  DEFAULT_FALLBACK_MODEL_ID,
-  FALLBACK_MAP,
   PROVIDER_DEFAULT_MODELS,
   enumerateAutoModelIds,
   enumerateExpertModelIds,
@@ -51,7 +48,7 @@ export {
 export type { RecommendedModelId } from './model-constants';
 
 // ---------------------------------------------------------------------------
-// WebGPU detection (still needed for WebLLM fallback path)
+// WebGPU detection
 // ---------------------------------------------------------------------------
 
 export async function checkWebGPUSupport(): Promise<{ supported: boolean; error?: string }> {

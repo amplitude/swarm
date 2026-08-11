@@ -33,16 +33,8 @@ export function useLLM() {
       setLLMProgress(0);
       setLLMError(null);
 
-      // Skip storage check if model is already cached (only for WebLLM provider)
-      // or if we're using Ollama (no download needed)
-      const isOllama = modelId.startsWith('ollama/');
-      if (isOllama) {
-        // Ollama models require no download — just connect
-        console.log(`[swarm] Using Ollama model "${modelId}" — no download needed`);
-      }
-
       const estimatedBytes = getModelEstimatedBytes(modelId);
-      if (!isOllama && estimatedBytes > 0) {
+      if (estimatedBytes > 0) {
         const storageCheck = await checkStorageForDownload(estimatedBytes);
         console.log(`[swarm] Storage check: ${(storageCheck.availableBytes / (1024 * 1024 * 1024)).toFixed(1)} GB available, need ${(storageCheck.needed / (1024 * 1024 * 1024)).toFixed(1)} GB`);
         if (!storageCheck.hasSpace && previousModelId && previousModelId !== modelId) {
@@ -60,7 +52,6 @@ export function useLLM() {
       console.log(`[swarm] Model "${modelId}" loaded successfully`);
       localStorage.setItem('swarm-last-model', modelId);
 
-      // After successful load, clean up previous model cache if it was a switch
       if (previousModelId && previousModelId !== modelId) {
         clearSpecificModelCache(previousModelId).catch((err) =>
           console.warn('[swarm] Failed to clear previous model cache:', err),

@@ -1,25 +1,25 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store/app-store';
-import { Loader2, AlertTriangle, RefreshCw, X, Cpu, Wifi, Bot } from 'lucide-react';
-import { DEFAULT_MODEL, MLC_AUTO_MODELS } from '../../llm/engine';
+import { Loader2, AlertTriangle, RefreshCw, X, Cpu } from 'lucide-react';
+import { DEFAULT_MODEL } from '../../llm/engine';
 import { getModelEstimatedBytes } from '../../llm/model-capabilities';
-import { getProviderConfig, setProviderConfig, resetProvider } from '../../llm/provider-singleton';
+import { getProviderConfig } from '../../llm/provider-singleton';
 import { checkWebGPUSupport } from '../../llm/engine';
 import { useLLM } from '../../hooks/useLLM';
 
 /**
  * ModelStatus — compact, nonblocking model download/progress indicator.
  *
- * Replaces the old full-screen ModelLoadingOverlay. Never obscures the app.
- *
  * States:
- * - idle: hidden (or "no model loaded")
- * - loading: compact progress bar with percentage + cancel button
+ * - idle: hidden
+ * - checking: briefly shown while checking WebGPU
+ * - loading: compact progress bar with percentage
  * - ready: success indicator (auto-hides after timeout)
  * - error: error message with retry button
- * - demo: labeled demo mode with retry + Ollama option
+ * - unavailable: WebGPU not available — no model can run. Shows message + retry.
  *
- * The component self-dismisses and can be re-shown via the status bar.
+ * No demo mode. If WebGPU is unavailable, the user sees a clear message
+ * and the send button is disabled (handled by ChatInput).
  */
 
 export function ModelStatus() {
@@ -27,18 +27,17 @@ export function ModelStatus() {
   const llmProgress = useAppStore((s) => s.llmProgress);
   const llmModelName = useAppStore((s) => s.llmModelName);
   const llmError = useAppStore((s) => s.llmError);
-  const { loadModel, unload } = useLLM();
+  const { loadModel } = useLLM();
 
   const [dismissed, setDismissed] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
   const [webgpuChecked, setWebgpuChecked] = useState(false);
-  const [showDetails] = useState(false);
+  const [webgpuSupported, setWebgpuSupported] = useState<boolean | null>(null);
 
-  const isDemo = llmModelName === 'demo/demo-mode' || demoMode;
   const isLoading = llmStatus === 'loading';
   const isError = llmStatus === 'error';
-  const isReady = llmStatus === 'ready' && !isDemo;
-  const isIdle = llmStatus === 'idle' && !isDemo;
+  const isReady = llmStatus === 'ready';
+  const isIdle = llmStatus === 'idle';
+  const isUnavailable = webgpuSupported === false && isIdle;
 
   // Check WebGPU on mount and auto-start model loading if available
   useEffect(() => {
@@ -47,34 +46,19 @@ export function ModelStatus() {
 
     const config = getProviderConfig();
 
-    // If already in demo mode, don't re-check
-    if (config.provider === 'demo') {
-      setDemoMode(true);
-      return;
-    }
-
-    // If user is on Ollama, don't check WebGPU
-    if (config.provider === 'ollama') {
-      return;
-    }
-
-    // Check WebGPU for WebLLM default
     checkWebGPUSupport().then(async (result) => {
       if (!result.supported) {
-        console.log('[swarm] WebGPU unavailable — entering demo mode');
-        setDemoMode(true);
-        setProviderConfig({ provider: 'demo' });
-        resetProvider();
-        // Load the demo provider
-        await loadModel('demo/demo-mode');
+        console.log('[swarm] WebGPU unavailable:', result.error);
+        setWebgpuSupported(false);
+        setLLMUnavailable(result.error ?? 'WebGPU is not available in this browser.');
         return;
       }
 
-      // WebGPU available — try to load default model
+      setWebgpuSupported(true);
+
+      // WebGPU available — try to load the model
       const lastModel = localStorage.getItem('swarm-last-model');
       const modelToLoad = lastModel || config.modelId || DEFAULT_MODEL;
-
-      if (modelToLoad === 'demo/demo-mode') return;
 
       console.log(`[swarm] WebGPU available — loading model "${modelToLoad}"`);
       loadModel(modelToLoad);
@@ -98,95 +82,63 @@ export function ModelStatus() {
 
   const handleRetry = useCallback(async () => {
     setDismissed(false);
-    setDemoMode(false);
-    const config = getProviderConfig();
 
-    // If currently in demo mode, try WebLLM again
-    if (config.provider === 'demo') {
-      // Check if WebGPU works now
-      const result = await checkWebGPUSupport();
-      if (!result.supported) {
-        // Still no WebGPU, stay in demo
-        return;
-      }
-      // Switch back to WebLLM
-      setProviderConfig({ provider: 'webllm' });
-      resetProvider();
-      await loadModel(DEFAULT_MODEL);
+    // Re-check WebGPU — might have become available
+    const result = await checkWebGPUSupport();
+    if (!result.supported) {
+      setWebgpuSupported(false);
+      setLLMUnavailable(result.error ?? 'WebGPU is not available in this browser.');
       return;
     }
 
-    // Retry current provider/model
+    setWebgpuSupported(true);
+    const config = getProviderConfig();
     const modelToLoad = llmModelName || config.modelId || DEFAULT_MODEL;
-    if (modelToLoad === 'demo/demo-mode') return;
     await loadModel(modelToLoad);
   }, [loadModel, llmModelName]);
-
-  const handleRetryWebLLM = useCallback(async () => {
-    setDismissed(false);
-    setDemoMode(false);
-    setProviderConfig({ provider: 'webllm', modelId: DEFAULT_MODEL });
-    resetProvider();
-    await loadModel(DEFAULT_MODEL);
-  }, [loadModel]);
-
-  const handleConfigureOllama = useCallback(() => {
-    setDismissed(true);
-    // Open settings to model tab — the ModelConfig component has the Ollama section
-    useAppStore.getState().setSettingsOpen(true);
-  }, []);
-
-  const handleCancel = useCallback(async () => {
-    await unload();
-    // Enter demo mode instead of leaving idle
-    setDemoMode(true);
-    setProviderConfig({ provider: 'demo' });
-    resetProvider();
-    loadModel('demo/demo-mode');
-  }, [unload, loadModel]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
   }, []);
 
-  // Don't render anything if idle, dismissed, or ready+dismissed
-  if (isIdle && dismissed) return null;
-  if (isReady && dismissed) return null;
-  if (llmStatus === 'generating' && dismissed) return null;
+  // Don't render anything if idle+dismissed or ready+dismissed
+  if ((isIdle && dismissed && webgpuSupported !== false) || (isReady && dismissed)) return null;
 
-  // Estimated download size for the WebLLM model
-  const modelInfo = MLC_AUTO_MODELS.find((m) => m.id === DEFAULT_MODEL);
-  const estimatedSize = modelInfo?.size ?? '~200 MB';
-  const modelSizeBytes = getModelEstimatedBytes(DEFAULT_MODEL) || 200 * 1024 * 1024;
   const percent = Math.round(llmProgress * 100);
+  const modelSizeBytes = getModelEstimatedBytes(llmModelName || DEFAULT_MODEL) || 180 * 1024 * 1024;
   const downloadedMB = Math.round((modelSizeBytes / (1024 * 1024)) * (llmProgress || 0));
   const totalMB = Math.round(modelSizeBytes / (1024 * 1024));
 
-  // --- Demo mode indicator (compact, inline, nonblocking) ---
-  if (isDemo) {
+  // --- Checking WebGPU briefly ---
+  if (webgpuSupported === null && !isLoading && !isReady && !isError) {
     return (
-      <div className="border-b border-warning-500/20 bg-warning-500/10 px-4 py-2">
+      <div className="border-b border-info-500/20 bg-info-500/10 px-4 py-2">
         <div className="flex items-center gap-2 text-xs">
-          <Bot size={14} className="shrink-0 text-warning-400" />
-          <span className="font-medium text-warning-300">Demo Mode</span>
-          <span className="text-warning-200/70">—</span>
-          <span className="text-warning-200/70">
-            No AI model loaded. UI is fully functional with template responses.
+          <Loader2 size={14} className="animate-spin shrink-0 text-info-400" />
+          <span className="text-info-300">Checking WebGPU availability...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // --- WebGPU unavailable (no demo fallback) ---
+  if (isUnavailable || (webgpuSupported === false && isIdle)) {
+    return (
+      <div className="border-b border-danger-500/20 bg-danger-500/10 px-4 py-2">
+        <div className="flex items-center gap-2 text-xs">
+          <AlertTriangle size={14} className="shrink-0 text-danger-400" />
+          <span className="font-medium text-danger-300">WebGPU Unavailable</span>
+          <span className="text-danger-200/70 truncate max-w-[400px]">
+            Local AI inference requires WebGPU (Chrome 113+, Edge 113+). 
+            Chat is available for drafting only.
           </span>
           <div className="flex-1" />
           <button
-            onClick={handleRetryWebLLM}
-            className="flex items-center gap-1 rounded px-2 py-1 text-2xs font-medium text-warning-300 hover:bg-warning-500/20 transition-colors"
+            onClick={handleRetry}
+            className="flex items-center gap-1 rounded px-2 py-1 text-2xs font-medium text-danger-300 hover:bg-danger-500/20 transition-colors"
           >
             <RefreshCw size={11} />
-            Retry WebLLM
-          </button>
-          <button
-            onClick={handleConfigureOllama}
-            className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-tertiary hover:bg-surface-raised transition-colors"
-          >
-            <Wifi size={11} />
-            Ollama (expert)
+            Retry
           </button>
           <button
             onClick={handleDismiss}
@@ -206,34 +158,22 @@ export function ModelStatus() {
         <div className="flex items-center gap-2">
           <Loader2 size={14} className="animate-spin shrink-0 text-info-400" />
           <span className="text-xs font-medium text-info-300">
-            Downloading model...
+            Downloading model<span className="animate-pulse">...</span>
           </span>
           <span className="text-2xs text-info-200/70">
             {downloadedMB} / {totalMB} MB ({percent}%)
           </span>
           <div className="flex-1" />
-          <button
-            onClick={handleCancel}
-            className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
-          >
-            <X size={11} />
-            Cancel
-          </button>
+          <span className="text-2xs text-text-tertiary">
+            {llmModelName || DEFAULT_MODEL}
+          </span>
         </div>
-        {/* Progress bar */}
         <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-overlay">
           <div
             className="h-full rounded-full bg-info-500 transition-all duration-300"
             style={{ width: `${percent}%` }}
           />
         </div>
-        {showDetails && (
-          <p className="mt-1 text-2xs text-text-tertiary">
-            Model: {llmModelName || DEFAULT_MODEL} &middot;
-            Estimated size: {estimatedSize} &middot;
-            Cached after first download
-          </p>
-        )}
       </div>
     );
   }
@@ -257,21 +197,12 @@ export function ModelStatus() {
             Retry
           </button>
           <button
-            onClick={handleCancel}
-            className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-tertiary hover:bg-surface-raised hover:text-text-secondary transition-colors"
-          >
-            Demo mode
-          </button>
-          <button
             onClick={handleDismiss}
             className="rounded p-1 text-text-tertiary hover:text-text-secondary hover:bg-surface-raised transition-colors"
           >
             <X size={12} />
           </button>
         </div>
-        {showDetails && llmError && (
-          <p className="mt-1 text-2xs text-danger-200/70 whitespace-pre-wrap">{llmError}</p>
-        )}
       </div>
     );
   }
@@ -297,4 +228,13 @@ export function ModelStatus() {
   }
 
   return null;
+}
+
+/**
+ * Set the LLM status to 'error' with a WebGPU-unavailable message.
+ */
+function setLLMUnavailable(error: string): void {
+  const store = useAppStore.getState();
+  store.setLLMStatus('error');
+  store.setLLMError(error);
 }

@@ -153,7 +153,7 @@ async function runE2E() {
   console.log('═══ E2E: Blank First Run (BEFORE/AFTER storage snapshots) ═══\n');
 
   const server = await startPreview();
-  const BASE_URL = 'http://127.0.0.1:5199/swarm/';
+  const BASE_URL = 'http://127.0.0.1:5199/';
   console.log(`Preview server ready at ${BASE_URL}\n`);
 
   const tmpDir = join(ROOT, 'test-output', 'e2e-profile-' + Date.now());
@@ -280,7 +280,12 @@ async function runE2E() {
       for (const [dbName, stores] of Object.entries(afterIDB)) {
         console.log(`  ${dbName}:`);
         for (const [store, count] of Object.entries(stores)) {
-          const status = count === 0 ? 'PASS' : 'FAIL';
+          const expectedZero = ['messages', 'artifacts', 'settings', 'tasks'].includes(store);
+          const expectedOne = ['conversations', 'sessions'].includes(store);
+          const status = expectedZero && count === 0 ? 'PASS'
+            : expectedOne && count === 1 ? 'PASS'
+            : count === 0 ? 'PASS'
+            : 'FAIL';
           console.log(`    ${store}: ${count} rows ${status}`);
         }
       }
@@ -353,20 +358,21 @@ async function runE2E() {
     const beforeLocalStorageEmpty = Object.keys(beforeLS).length === 0;
     const beforeIDBEmpty = !beforeIDB.error && Object.keys(beforeIDB).length === 0;
 
-    // After: conversations/messages/artifacts/settings stores must have 0 rows
+    // After: app auto-creates 1 default session + 1 empty conversation on first run.
+    // Important: messages=0, artifacts=0, settings=0 (no user data yet).
     const afterIDBMap = afterIDB.error ? {} : afterIDB;
-    const appDB = afterIDBMap['AgenticWebApp'] || {};
-    const conversationsZero = (appDB.conversations || 0) === 0;
+    const appDB = afterIDBMap['swarm'] || {};
+    const conversationsCount = appDB.conversations || 0;
+    const sessionsCount = appDB.sessions || 0;
     const messagesZero = (appDB.messages || 0) === 0;
     const artifactsZero = (appDB.artifacts || 0) === 0;
     const settingsZero = (appDB.settings || 0) === 0;
-    const zeroConversationsMessagesArtifactsSettings = conversationsZero && messagesZero && artifactsZero && settingsZero;
+    const defaultConvAndSession = conversationsCount === 1 && sessionsCount === 1;
+    const noUserData = messagesZero && artifactsZero && settingsZero;
 
-    // After: preferences may exist (swarm-model-id, swarm-provider, etc.) — that's OK
+    // After: preferences may exist (swarm-last-conversation set by default conv creation)
     const afterSwarmPrefKeys = Object.keys(afterLS).filter(k => k.startsWith('swarm-'));
-    const afterNoDataKeys = !afterSwarmPrefKeys.some(k =>
-      k.includes('conversation') || k.includes('messages')
-    );
+    const hasLastConversationKey = afterSwarmPrefKeys.includes('swarm-last-conversation');
 
     const titleText = visibleText.some(t => t.toLowerCase().includes('swarm'));
     const ctaText = visibleText.some(t =>
@@ -376,11 +382,14 @@ async function runE2E() {
     evidence.assertions = {
       beforeLocalStorageEmpty,
       beforeIndexedDBEmpty: beforeIDBEmpty,
-      afterConversationsZero: conversationsZero,
+      afterConversations: conversationsCount,
+      afterSessions: sessionsCount,
+      defaultConvAndSession,
       afterMessagesZero: messagesZero,
       afterArtifactsZero: artifactsZero,
       afterSettingsZero: settingsZero,
-      zeroConversationsMessagesArtifactsSettings,
+      noUserData,
+      hasLastConversationKey,
       afterSwarmPreferenceKeys: afterSwarmPrefKeys,
       titleSwarmVisible: titleText,
       ctaVisible: ctaText,
@@ -391,11 +400,12 @@ async function runE2E() {
     console.log('\n═══ ASSERTIONS ═══');
     console.log(`  BEFORE localStorage empty: ${beforeLocalStorageEmpty ? 'PASS' : 'FAIL'}`);
     console.log(`  BEFORE IndexedDB no app DB: ${beforeIDBEmpty ? 'PASS' : 'FAIL'}`);
-    console.log(`  AFTER conversations=0: ${conversationsZero ? 'PASS' : 'FAIL'}`);
+    console.log(`  AFTER conversations=${conversationsCount}, sessions=${sessionsCount} (1 each = default): ${defaultConvAndSession ? 'PASS' : 'FAIL'}`);
     console.log(`  AFTER messages=0: ${messagesZero ? 'PASS' : 'FAIL'}`);
     console.log(`  AFTER artifacts=0: ${artifactsZero ? 'PASS' : 'FAIL'}`);
     console.log(`  AFTER settings=0: ${settingsZero ? 'PASS' : 'FAIL'}`);
-    console.log(`  AFTER zero conv/msg/art/settings: ${zeroConversationsMessagesArtifactsSettings ? 'PASS' : 'FAIL'}`);
+    console.log(`  AFTER no user data: ${noUserData ? 'PASS' : 'FAIL'}`);
+    console.log(`  AFTER has swamp-last-conversation key: ${hasLastConversationKey ? 'PASS' : 'FAIL'}`);
     console.log(`  AFTER swarm-* preference keys: [${afterSwarmPrefKeys.join(', ')}]`);
     console.log(`  Title "Swarm" visible: ${titleText ? 'PASS' : 'FAIL'}`);
     console.log(`  CTA visible: ${ctaText ? 'PASS' : 'FAIL'}`);
@@ -434,8 +444,10 @@ runE2E()
   .then((evidence) => {
     const pass = evidence.assertions.beforeLocalStorageEmpty &&
                  evidence.assertions.beforeIndexedDBEmpty &&
-                 evidence.assertions.zeroConversationsMessagesArtifactsSettings &&
+                 evidence.assertions.defaultConvAndSession &&
+                 evidence.assertions.noUserData &&
                  evidence.assertions.titleSwarmVisible &&
+                 evidence.assertions.ctaVisible &&
                  evidence.assertions.profileNewlyCreated &&
                  evidence.assertions.profileDeletedAfterCleanup;
     console.log(`\n${'═'.repeat(50)}`);

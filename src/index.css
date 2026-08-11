@@ -2,5 +2,8 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
-/* ── Design System (globals) ──────────────────────────────────────── */
+/* ── Theme Template (single source of truth for all visual values) ── */
+@import "./styles/theme.css";
+
+/* ── Design System Behaviors (no visual values, only rules/utilities) ── */
 @import "./styles/globals.css";

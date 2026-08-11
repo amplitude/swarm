@@ -58,7 +58,7 @@ export function Sidebar() {
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <div className="h-6 w-6 rounded-md bg-primary-500 flex items-center justify-center">
-          <Bot size={14} className="text-white" />
+          <Bot size={14} className="text-text-inverse" />
         </div>
         <span className="text-sm font-semibold text-text-primary tracking-tight">Swarm</span>
         {activeSession && (

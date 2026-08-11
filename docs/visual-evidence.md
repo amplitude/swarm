@@ -1,6 +1,6 @@
 # Visual Geometry Evidence
 
-> Generated: 2026-08-10 (final retry)
+> Generated: 2026-08-10 (theme-system update)
 > Repository: `amplitude/swarm`
 > Method: Playwright 1.62.1 geometry audit + DOM text extraction
 > App state: Dashboard view (MissionControl), no model loaded, empty state
@@ -14,8 +14,8 @@
 | Property | Value |
 |----------|-------|
 | **File** | `docs/screenshots/desktop-1280x720.png` |
-| **MD5** | `a2d1d3e730a0329c03cafcfdd7831b59` |
-| **Size** | 48.6 KB |
+| **MD5** | `56479def5f67f04d18242f711157f72b` |
+| **Size** | 43.0 KB |
 | **Dimensions** | 1280×720 |
 
 ### Mobile 375×812
@@ -23,8 +23,8 @@
 | Property | Value |
 |----------|-------|
 | **File** | `docs/screenshots/mobile-375x812.png` |
-| **MD5** | `51d82f094757ca029af001db6a53ae5a` |
-| **Size** | 32.7 KB |
+| **MD5** | `529aa5812a2f7dbe1c7d1d60d55f6dc6` |
+| **Size** | 20.4 KB |
 | **Dimensions** | 375×812 |
 
 ---
@@ -158,8 +158,8 @@ All header text items fit within their containers at both viewports.
 ## 7. Final Snapshot Summary
 
 ```
-Screen hash (desktop):  a2d1d3e730a0329c03cafcfdd7831b59
-Screen hash (mobile):   51d82f094757ca029af001db6a53ae5a
+Screen hash (desktop):  56479def5f67f04d18242f711157f72b
+Screen hash (mobile):   529aa5812a2f7dbe1c7d1d60d55f6dc6
 Desktop overflow:       ✅ none
 Mobile overflow:        ✅ none
 Desktop intersections:  ✅ 0

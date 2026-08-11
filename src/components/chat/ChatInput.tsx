@@ -120,7 +120,7 @@ export function ChatInput({ placeholderOverride }: ChatInputProps) {
             <button
               onClick={stop}
               title="Stop generation"
-              className="flex shrink-0 items-center justify-center rounded-lg h-7 w-7 bg-danger-600 text-white hover:bg-danger-500 transition-colors"
+              className="flex shrink-0 items-center justify-center rounded-lg h-7 w-7 bg-danger-600 text-text-inverse hover:bg-danger-500 transition-colors"
             >
               <Square size={12} />
             </button>
@@ -129,7 +129,7 @@ export function ChatInput({ placeholderOverride }: ChatInputProps) {
               onClick={handleSend}
               disabled={!canSend}
               title={disabledReason || 'Send message (Enter)'}
-              className="flex shrink-0 items-center justify-center rounded-lg h-7 w-7 bg-primary-600 text-white transition-colors hover:bg-primary-500 disabled:opacity-30 disabled:hover:bg-primary-600"
+              className="flex shrink-0 items-center justify-center rounded-lg h-7 w-7 bg-primary-600 text-text-inverse transition-colors hover:bg-primary-500 disabled:opacity-30 disabled:hover:bg-primary-600"
             >
               <SendHorizonal size={14} />
             </button>

@@ -135,6 +135,35 @@ Select larger models in Settings → Model.
 
 ---
 
+## Theming — edit one file, restyle the entire app
+
+All visual values (colors, radii, shadows, spacing, layout) live in a single file:
+
+    src/styles/theme.css
+
+**HSL channel syntax** — colors store `H S% L%` so Tailwind opacity modifiers work:
+
+    --brand-500: 229 91% 65%;  /*  hsl(var(--brand-500) / <alpha-value>)  */
+    bg-brand-500/50            /*  →  hsla(229, 91%, 65%, 0.5)            */
+
+**Common variables to customize:**
+
+| Variable | Default | Controls |
+|----------|---------|----------|
+| `--brand-500` | `229 91% 65%` | Primary interactive color |
+| `--canvas` | `240 30% 14%` | App background |
+| `--surface` | `240 21% 17%` | Card/panel background |
+| `--text-primary` | `240 11% 97%` | Primary text |
+| `--border-default` | `240 17% 29%` | Borders |
+| `--radius-xl` | `0.75rem` | Message bubble rounding |
+| `--control-height` | `1.75rem` | Button/input height |
+| `--sidebar-width` | `15rem` | Sidebar width |
+| `--content-max-width` | `48rem` | Chat content max width |
+
+**Dark overrides** in `.dark {}` in the same file. See [docs/theming.md](docs/theming.md) for full guide.
+
+---
+
 ## Configuration
 
 | Environment Variable | Default | Description |

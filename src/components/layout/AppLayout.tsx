@@ -84,7 +84,7 @@ export function AppLayout({ main, rightPanel, topBar }: AppLayoutProps) {
           className="fixed inset-0 z-sidebar sm:hidden"
           onClick={() => setSidebarOpen(false)}
         >
-          <div className="absolute inset-0 bg-black/50" />
+          <div className="absolute inset-0 bg-overlay-backdrop" />
           <div
             className="absolute left-0 top-0 bottom-0 w-sidebar"
             onClick={(e) => e.stopPropagation()}
@@ -100,7 +100,7 @@ export function AppLayout({ main, rightPanel, topBar }: AppLayoutProps) {
           className="fixed inset-0 z-panel sm:hidden"
           onClick={() => setRightPanelOpen(false)}
         >
-          <div className="absolute inset-0 bg-black/50" />
+          <div className="absolute inset-0 bg-overlay-backdrop" />
           <div
             className="absolute right-0 top-0 bottom-0 w-panel max-sm:w-[85vw] bg-surface overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}

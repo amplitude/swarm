@@ -154,7 +154,7 @@ export function InspectorPanel() {
                 <button
                   onClick={handleAddTask}
                   disabled={!newTaskTitle.trim()}
-                  className="rounded-md bg-primary-600 px-2 py-1.5 text-2xs text-white hover:bg-primary-500 disabled:opacity-30 transition-colors"
+                  className="rounded-md bg-primary-600 px-2 py-1.5 text-2xs text-text-inverse hover:bg-primary-500 disabled:opacity-30 transition-colors"
                 >
                   Add
                 </button>

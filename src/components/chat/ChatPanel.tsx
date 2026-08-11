@@ -22,7 +22,7 @@ export function ChatPanel() {
         </div>
         <button
           onClick={() => createConversation(undefined, activeAgent)}
-          className="mt-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-500 transition-colors"
+          className="mt-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-text-inverse hover:bg-primary-500 transition-colors"
         >
           New conversation
         </button>

@@ -111,9 +111,9 @@ export function MermaidDiagram({ definition, className, onClick, expanded }: Mer
 
   if (error) {
     return (
-      <div className={`rounded-lg border border-red-500/30 bg-red-950/20 p-4 ${className ?? ''}`}>
-        <p className="text-sm text-red-400">Mermaid syntax error:</p>
-        <pre className="mt-1 text-xs text-red-300 whitespace-pre-wrap">{error}</pre>
+      <div className={`rounded-lg border border-danger-500/30 bg-danger-900/20 p-4 ${className ?? ''}`}>
+        <p className="text-sm text-danger-400">Mermaid syntax error:</p>
+        <pre className="mt-1 text-xs text-danger-300 whitespace-pre-wrap">{error}</pre>
       </div>
     );
   }
@@ -121,7 +121,7 @@ export function MermaidDiagram({ definition, className, onClick, expanded }: Mer
   if (!svgContent) {
     return (
       <div className={`flex items-center justify-center p-4 ${className ?? ''}`}>
-        <div className="text-sm text-zinc-400">Rendering diagram...</div>
+        <div className="text-sm text-text-tertiary">Rendering diagram...</div>
       </div>
     );
   }
@@ -144,19 +144,19 @@ export function MermaidDiagram({ definition, className, onClick, expanded }: Mer
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => exportAs('svg')}
-            className="rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-600"
+            className="rounded bg-surface-overlay px-2 py-1 text-xs text-text-secondary hover:bg-surface-raised"
           >
             SVG
           </button>
           <button
             onClick={() => exportAs('png')}
-            className="rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-600"
+            className="rounded bg-surface-overlay px-2 py-1 text-xs text-text-secondary hover:bg-surface-raised"
           >
             PNG
           </button>
           <button
             onClick={() => { setScale(1); setTranslate({ x: 0, y: 0 }); }}
-            className="rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-600"
+            className="rounded bg-surface-overlay px-2 py-1 text-xs text-text-secondary hover:bg-surface-raised"
           >
             Reset
           </button>

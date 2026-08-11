@@ -23,7 +23,7 @@ export function SettingsPanel() {
   if (!settingsOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 animate-fade-in">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-overlay-backdrop animate-fade-in">
       <div className="relative flex h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-xl animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-5 py-3">

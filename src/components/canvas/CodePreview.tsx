@@ -86,8 +86,8 @@ export function CodePreview({ code, mode = 'html', autoRun = false }: CodePrevie
         </button>
       </div>
 
-      {/* Preview area */}
-      <div className="flex-1 overflow-hidden bg-white relative">
+      {/* Preview area — sandboxed iframe has its own background, container uses surface token */}
+      <div className="flex-1 overflow-hidden bg-surface relative">
         <div ref={containerRef} className="h-full">
           <div className="iframe-host h-full w-full" />
         </div>

@@ -218,6 +218,8 @@ const RAW_PALETTE_PATTERNS = [
   /red-\d{2,3}/,
   /yellow-\d{2,3}/,
   /text-white\b/,
+  /text-black\b/,
+  /bg-white\b/,
   /bg-black\//,
   /#[0-9a-fA-F]{3,6}(?!\w)/,  // hex colors (but not in comments)
 ];

@@ -40,9 +40,23 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   settingsOpen: false,
   selectedArtifact: null,
 
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  toggleSidebar: () =>
+    set((s) => {
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+      if (isMobile && s.rightPanelOpen) {
+        return { sidebarOpen: !s.sidebarOpen, rightPanelOpen: false };
+      }
+      return { sidebarOpen: !s.sidebarOpen };
+    }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
+  toggleRightPanel: () =>
+    set((s) => {
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+      if (isMobile && s.sidebarOpen) {
+        return { rightPanelOpen: !s.rightPanelOpen, sidebarOpen: false };
+      }
+      return { rightPanelOpen: !s.rightPanelOpen };
+    }),
   setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
   setActivePanel: (panel) => set({ activePanel: panel }),
   setTheme: (theme) => {

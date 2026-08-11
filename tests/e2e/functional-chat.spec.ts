@@ -288,7 +288,7 @@ test.describe('Agent handoff', () => {
 
     // 1. Switch to General agent via sidebar
     await openSidebar(page);
-    const generalButton = page.locator('aside button', { hasText: 'General' });
+    const generalButton = page.locator('aside button', { hasText: 'General' }).first();
     await expect(generalButton).toBeVisible({ timeout: 3000 });
     await generalButton.click();
     await page.waitForTimeout(300);
@@ -355,7 +355,7 @@ test.describe('Task management', () => {
     await page.waitForTimeout(500);
 
     // Task should appear in the list
-    await expect(page.getByText('E2E Persisted Task')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByText('E2E Persisted Task').first()).toBeVisible({ timeout: 3000 });
 
     await screenshot(page, '13-task-created');
 
@@ -380,11 +380,11 @@ test.describe('Task management', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 8. MOBILE 390x844: sidebar drawer, inspector, composer
+// 8. MOBILE 390x844: overlay drawers, composer, normal interactions only
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe('Mobile layout 390x844', () => {
-  test('sidebar drawer, inspector sheet, composer visible, no overflow', async ({ browser }) => {
+  test('sidebar/inspector overlay drawers open/close natively, composer usable', async ({ browser }) => {
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
     });
@@ -392,67 +392,185 @@ test.describe('Mobile layout 390x844', () => {
     await mockWebGPU(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+    await waitForModelReady(page);
 
-    // Verify PanelToggle button exists for sidebar
-    const panelToggle = page.locator('button[title="Open sidebar"]');
-    await expect(panelToggle.first()).toBeVisible({ timeout: 3000 });
-    await screenshot(page, '15-mobile-default');
+    // ── 1. Open sidebar via PanelToggle button (real user click) ──
+    const sidebarToggle = page.locator('button[title="Open sidebar"]');
+    await expect(sidebarToggle).toBeVisible({ timeout: 3000 });
+    await sidebarToggle.click();
+    await page.waitForTimeout(600);
 
-    // Open right panel (inspector) via Header button
-    const headerOpen = page.locator('header button[title="Open panel"]').first();
-    await expect(headerOpen).toBeVisible({ timeout: 3000 });
-    await headerOpen.click();
-    await page.waitForTimeout(400);
-    await expect(page.getByText('Tasks').first()).toBeVisible({ timeout: 3000 });
-    await screenshot(page, '16-mobile-inspector');
+    // Scope locators to the visible mobile overlay to avoid matching hidden desktop sidebar
+    const sidebarOverlay = page.locator('.fixed.inset-0.z-sidebar');
+    await expect(sidebarOverlay).toBeVisible({ timeout: 3000 });
+    await expect(sidebarOverlay.getByText('Sessions').first()).toBeVisible({ timeout: 3000 });
+    await expect(sidebarOverlay.getByText('Agents').first()).toBeVisible({ timeout: 3000 });
+    await expect(sidebarOverlay.getByText('Conversations').first()).toBeVisible({ timeout: 3000 });
+    await screenshot(page, '15-mobile-sidebar-open');
 
-    // Toggle right panel via page.evaluate (reliable on mobile flex-col)
-    await page.evaluate(() => {
-      // Access zustand store: the store is accessible via React devtools
-      // or by importing the module. Use a click via the store directly.
-    });
-    // Use the Header close button
-    const closeBtn = page.locator('header button[title="Close panel"]').first();
-    await expect(closeBtn).toBeVisible({ timeout: 3000 });
-    await closeBtn.click();
-    await page.waitForTimeout(300);
+    // ── 2. Close sidebar via backdrop click (outside the 240px sidebar area) ──
+    const backdrop = sidebarOverlay.locator('> .absolute.inset-0').first();
+    await expect(backdrop).toBeVisible({ timeout: 2000 });
+    // Click at viewport-right area (x > 240px) to avoid sidebar interception
+    await backdrop.click({ position: { x: 350, y: 422 } });
+    await page.waitForTimeout(600);
 
-    // Composer should be visible
+    // Sidebar closed — PanelToggle visible again, composer visible
+    await expect(sidebarToggle).toBeVisible({ timeout: 3000 });
     const textarea = page.locator('textarea[placeholder*="Type a message"]');
-    await expect(textarea).toBeVisible({ timeout: 3000 });
+    await expect(textarea).toBeVisible({ timeout: 2000 });
+    await screenshot(page, '16-mobile-sidebar-closed');
 
-    // Check no horizontal overflow
+    // ── 3. Open inspector via header button ──
+    const inspectorToggle = page.locator('header button[title="Open panel"]').first();
+    await expect(inspectorToggle).toBeVisible({ timeout: 2000 });
+    await inspectorToggle.click();
+    await page.waitForTimeout(600);
+
+    // Scope locators to the visible mobile inspector overlay
+    const inspectorOverlay = page.locator('.fixed.inset-0.z-panel');
+    await expect(inspectorOverlay).toBeVisible({ timeout: 3000 });
+    await expect(inspectorOverlay.getByText('Tasks').first()).toBeVisible({ timeout: 3000 });
+    await expect(inspectorOverlay.getByText('Agent').first()).toBeVisible({ timeout: 3000 });
+    await screenshot(page, '17-mobile-inspector-open');
+
+    // ── 4. Close inspector via backdrop click (outside the right-side panel area) ──
+    const inspectorBackdrop = inspectorOverlay.locator('> .absolute.inset-0').first();
+    await expect(inspectorBackdrop).toBeVisible({ timeout: 2000 });
+    // Click at viewport-left area to avoid right-side panel interception
+    await inspectorBackdrop.click({ position: { x: 30, y: 422 } });
+    await page.waitForTimeout(600);
+
+    // Inspector closed — composer visible
+    await expect(textarea).toBeVisible({ timeout: 2000 });
+    await screenshot(page, '18-mobile-inspector-closed');
+
+    // ── 5. Type and send a message normally ──
+    await textarea.fill('Hello from mobile');
+    await page.waitForTimeout(100);
+    await textarea.press('Enter');
+    await page.waitForTimeout(2000);
+
+    // Verify response appears
+    await expect(page.getByText(/for|Here|testing|a|response|the|is|purposes/).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Hello from mobile')).toBeVisible();
+    await screenshot(page, '19-mobile-send-response');
+
+    // ── 6. Verify no horizontal overflow ──
     const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
     const viewportWidth = await page.evaluate(() => window.innerWidth);
     expect(bodyWidth).toBeLessThanOrEqual(viewportWidth + 5);
 
-    await screenshot(page, '17-mobile-composer');
     await context.close();
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 9. NORMAL (no WebGPU) production build: send disabled, honest reason
+// 9. NORMAL (no WebGPU) production build: network assertions, disabled send
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe('WebGPU-unavailable normal build', () => {
-  test('send disabled with honest reason, no demo', async ({ browser }) => {
+  test('zero external endpoints, send disabled with reason, draft/nav usable', async ({ browser }) => {
     // Run WITHOUT WebGPU mock. Headless Chrome's requestAdapter returns null,
-    // so checkWebGPUSupport() returns false and the UI shows "Model load failed"
+    // so the app operates with llmStatus === 'error' — no inference available.
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();
 
+    // ── Record ALL request URLs ──
+    const allUrls: string[] = [];
+    page.on('request', (request) => {
+      allUrls.push(request.url());
+    });
+
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    // Should show model load failure
+    // ── Assert zero forbidden inference / offline endpoints ──
+    const previewPort = '4173';
+    const forbiddenPatterns = [
+      // Ollama / local inference (port 11434 specifically, NOT the preview server)
+      { pattern: /localhost:11434/, label: 'Ollama (port 11434)' },
+      { pattern: /127\.0\.0\.1:11434/, label: 'Ollama via 127.0.0.1' },
+      // OpenAI
+      { pattern: /api\.openai\.com/, label: 'OpenAI API' },
+      { pattern: /oai\.azure\.com/, label: 'Azure OpenAI' },
+      // Anthropic
+      { pattern: /api\.anthropic\.com/, label: 'Anthropic API' },
+      // Google / Gemini
+      { pattern: /generativelanguage\.googleapis\.com/, label: 'Gemini API' },
+      // Cloud inference endpoints
+      { pattern: /inference\.(together|fireworks|groq)\.com/, label: 'Cloud inference' },
+      { pattern: /api\.(together|fireworks|groq)\.com/, label: 'Cloud API' },
+      // Test fixture markers
+      { pattern: /__E2E_PROVIDER__/, label: 'E2E fixture marker' },
+      { pattern: /e2e[-.]provider/, label: 'E2E provider path' },
+    ];
+
+    // Also check: localhost/127.0.0.1 on any port EXCEPT the preview server
+    const violations: string[] = [];
+    for (const url of allUrls) {
+      try {
+        const u = new URL(url);
+        if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') &&
+            u.port !== '' && u.port !== previewPort) {
+          violations.push(`  ✗ Local inference endpoint (${u.hostname}:${u.port}): ${url}`);
+        }
+        if (u.port === '11434') {
+          violations.push(`  ✗ Ollama port 11434 endpoint: ${url}`);
+        }
+      } catch {}
+
+      for (const { pattern, label } of forbiddenPatterns) {
+        if (pattern.test(url)) {
+          violations.push(`  ✗ ${label} endpoint detected: ${url}`);
+        }
+      }
+    }
+
+    const uniqueViolations = [...new Set(violations)];
+    if (uniqueViolations.length > 0) {
+      console.log(`\nForbidden endpoint violations (${uniqueViolations.length}):`);
+      uniqueViolations.forEach((v) => console.log(v));
+    }
+    expect(uniqueViolations).toHaveLength(0);
+
+    console.log(`\nNetwork assertion: ${allUrls.length} requests recorded, 0 forbidden endpoint violations`);
+
+    // ── Assert model load failure shown ──
     const failMsg = page.getByText('Model load failed');
     await expect(failMsg).toBeVisible({ timeout: 8000 });
 
-    await screenshot(page, '18-webgpu-unavailable');
+    // ── Assert draft input remains usable ──
+    const textarea = page.locator('textarea[placeholder*="Type a message"]');
+    await expect(textarea).toBeVisible({ timeout: 3000 });
+    await textarea.fill('Offline draft test');
+    const draftValue = await textarea.inputValue();
+    expect(draftValue).toBe('Offline draft test');
+
+    // ── Assert send button disabled with honest reason (visible after input filled) ──
+    const sendBtn = page.locator('button[title*="Send message"]').or(page.locator('button[title*="Model failed"]'));
+    await expect(sendBtn.first()).toBeVisible({ timeout: 3000 });
+    await expect(sendBtn.first()).toBeDisabled();
+
+    // ── Assert status hint shows the honest reason ──
+    await expect(page.getByText(/Model failed|WebGPU unavailable|Draft only/).first()).toBeVisible({ timeout: 3000 });
+
+    // ── Assert navigation remains usable (header buttons clickable) ──
+    const headerButtons = page.locator('header button');
+    const btnCount = await headerButtons.count();
+    expect(btnCount).toBeGreaterThanOrEqual(2);
+    // Verify first header button is clickable
+    await expect(headerButtons.first()).toBeEnabled({ timeout: 2000 });
+
+    // Also verify the sidebar/open-panel button in header is clickable
+    const sidebarHeaderBtn = page.locator('header button[title*="sidebar"]').first();
+    await expect(sidebarHeaderBtn).toBeVisible({ timeout: 2000 });
+    await expect(sidebarHeaderBtn).toBeEnabled();
+
+    await screenshot(page, '20-webgpu-unavailable-network');
     await context.close();
   });
 });

@@ -22,8 +22,9 @@ const MIME = {
 };
 
 const server = createServer((req, res) => {
-  // Strip query string and map root to index.html
+  // Strip query string, decode URI, and map root to index.html
   let path = req.url.split('?')[0];
+  try { path = decodeURIComponent(path); } catch { /* malformed — let 404 handle it */ }
   if (path === '/' || path === '') path = '/index.html';
   const filePath = join(__dirname, path);
 

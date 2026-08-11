@@ -358,6 +358,9 @@ function emitAgentEvent(type, data) {
 // Expose globally
 window.agentEvents = agentEvents;
 
+// Expose last request for test introspection (fake mode only)
+window._lastProviderRequest = null;
+
 // =========================================================================
 // 4. STATE
 // =========================================================================
@@ -374,6 +377,7 @@ const state = {
   lastMessageText: null,
   theme: 'dark',  // dark|light
   conversationTitle: 'New conversation',
+  _abortReason: null,           // 'GENERATION_TIMEOUT' | 'ABORTED' | null
 };
 
 // =========================================================================
@@ -423,9 +427,12 @@ class FakeProvider {
   getLoadedModel() { return null; }
   async load() { /* no-op */ }
   async unload() { /* no-op */ }
+  interrupt() { /* no-op — fake provider ignores cancellation */ }
 
   async *generate(request) {
     const timeoutMs = CONFIG.TIMEOUT_MS;
+    // Store request for test introspection (max_tokens, tool count, caps)
+    window._lastProviderRequest = request;
 
     switch (this.mode) {
       case 'success': {
@@ -474,14 +481,18 @@ class FakeProvider {
         throw new Error('FAKE_MODE_ERROR: Simulated model error for testing fallback behavior.');
       }
       case 'timeout': {
-        // Sleep until the abort signal fires
+        // Intentionally produce a late result after the 30s timeout
+        // would have fired, simulating a provider that responds belatedly
+        // or otherwise ignores abort in a controlled way.
+        const lateDelayMs = timeoutMs + 2000;
         while (true) {
           await sleep(100);
-          if (request.signal && request.signal.aborted) {
-            yield { finishReason: 'stop' };
-            return;
-          }
+          const elapsed = Date.now() - (request._startTime || Date.now());
+          if (elapsed >= lateDelayMs) break;
         }
+        yield { content: 'Late arrival after timeout.' };
+        yield { finishReason: 'stop' };
+        return;
       }
       default: {
         yield { content: 'Unknown mode.', finishReason: 'stop' };
@@ -553,7 +564,7 @@ class WebLLMProvider {
       stream: true,
       stream_options: { include_usage: true },
       temperature: request.temperature || 0.7,
-      max_tokens: request.maxTokens || CONFIG.MAX_TOKENS,
+      max_tokens: request.max_tokens || CONFIG.MAX_TOKENS,
     };
     if (hasTools) {
       completionRequest.tools = request.tools;
@@ -605,6 +616,16 @@ class WebLLMProvider {
       }
 
       yield streamChunk;
+    }
+  }
+
+  async interrupt() {
+    if (this._engine && typeof this._engine.interruptGenerate === 'function') {
+      try {
+        await this._engine.interruptGenerate();
+      } catch (e) {
+        console.warn('[swarm] interruptGenerate failed:', e);
+      }
     }
   }
 
@@ -736,6 +757,8 @@ RESPONSE GUIDELINES:
       messages: llmMessages,
       tools: toolDefs,
       temperature: 0.7,
+      max_tokens: CONFIG.MAX_TOKENS,
+      _startTime: Date.now(),
     });
 
     // ── Step 4: Process response ──
@@ -933,7 +956,9 @@ async function sendMessage(text) {
 
   const timeoutId = setTimeout(() => {
     if (!abortController.signal.aborted) {
+      state._abortReason = 'GENERATION_TIMEOUT';
       abortController.abort();
+      getProvider().interrupt();
       console.log('[swarm] turn timed out after ' + CONFIG.TIMEOUT_MS + 'ms');
     }
   }, CONFIG.TIMEOUT_MS);
@@ -1008,9 +1033,20 @@ async function sendMessage(text) {
           msgEl.querySelector('.msg-content').textContent = lastMsg.content;
         }
       }
-      emitAgentEvent('generation_stopped', { timestamp: Date.now() });
+      const abortCode = state._abortReason || 'GENERATION_TIMEOUT';
+      emitAgentEvent('error', {
+        code: abortCode,
+        message: abortCode === 'ABORTED' ? 'Generation aborted by user' : 'Generation timed out after ' + CONFIG.TIMEOUT_MS + 'ms',
+        timestamp: Date.now(),
+      });
+      emitAgentEvent('ai_response', {
+        content: lastMsg ? lastMsg.content || '' : '',
+        length: lastMsg ? (lastMsg.content || '').length : 0,
+        isError: true,
+        timestamp: Date.now(),
+      });
       updateUI();
-      return; // Exit early — do not emit ai_response for aborted generations
+      return;
     }
 
     // ── 10. Apply response caps ──
@@ -1049,17 +1085,11 @@ async function sendMessage(text) {
       scrollToBottom();
     }
 
-    // ── 13. Dispatch ai_response event ──
-    emitAgentEvent('ai_response', {
-      content: cappedContent || '',
-      length: cappedContent.length,
-      isOverlong: displayContent.length > CONFIG.MAX_RESPONSE_CHARS,
-      timestamp: Date.now(),
-    });
-
-    // ── 14. Handle empty response fallback ──
-    if (!cappedContent && !hasStreamed) {
-      emitAgentEvent('diagnostic_error', {
+    // ── 13. Handle empty response fallback (emit error BEFORE ai_response) ──
+    const isEmpty = !cappedContent && !hasStreamed;
+    if (isEmpty) {
+      emitAgentEvent('error', {
+        code: 'EMPTY_RESPONSE',
         message: 'Model returned empty response. Using fallback.',
         timestamp: Date.now(),
       });
@@ -1071,6 +1101,14 @@ async function sendMessage(text) {
         }
       }
     }
+
+    // ── 14. Dispatch ai_response event ──
+    emitAgentEvent('ai_response', {
+      content: cappedContent || '',
+      length: cappedContent.length,
+      isOverlong: displayContent.length > CONFIG.MAX_RESPONSE_CHARS,
+      timestamp: Date.now(),
+    });
 
   } catch (err) {
     const errorMessage = err.message || String(err);
@@ -1087,7 +1125,17 @@ async function sendMessage(text) {
           msgEl.querySelector('.msg-content').textContent = lastMsg.content;
         }
       }
-      emitAgentEvent('generation_stopped', { timestamp: Date.now() });
+      emitAgentEvent('error', {
+        code: 'ABORTED',
+        message: 'Generation aborted by user',
+        timestamp: Date.now(),
+      });
+      emitAgentEvent('ai_response', {
+        content: lastMsg ? lastMsg.content || '' : '',
+        length: lastMsg ? (lastMsg.content || '').length : 0,
+        isError: true,
+        timestamp: Date.now(),
+      });
     } else {
       // Error — show in chat
       state.status = 'error';
@@ -1095,7 +1143,8 @@ async function sendMessage(text) {
 
       const lastMsg = state.messages[state.messages.length - 1];
       if (lastMsg && lastMsg._streaming) {
-        emitAgentEvent('diagnostic_error', {
+        emitAgentEvent('error', {
+          code: 'GENERATION_FAILED',
           message: errorMessage,
           timestamp: Date.now(),
         });
@@ -1165,7 +1214,9 @@ composerInput.addEventListener('input', () => {
 // Stop button
 stopBtn.addEventListener('click', () => {
   if (state.abortController) {
+    state._abortReason = 'ABORTED';
     state.abortController.abort();
+    getProvider().interrupt();
   }
 });
 

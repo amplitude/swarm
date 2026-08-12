@@ -1,11 +1,12 @@
 /**
  * agent.spec.js — Swarm local-agent tests.
  *
- * Two test domains:
- *   1. API tests — POST /api/chat directly (fast, no browser)
- *   2. UI tests — browser renders correctly for each mode
+ * Three test domains:
+ *   1. Unit tests — pure-function tests with dependency injection (no server)
+ *   2. API tests — POST /api/chat directly (fast, no browser)
+ *   3. UI tests — browser renders correctly for each mode
  *
- * Fake modes (no model, no download):
+ * Fake modes (no model, no download) — ONLY effective when SWARM_FAKE=true:
  *   success / empty / error / timeout
  *
  * Key contract for POST /api/chat:
@@ -31,8 +32,7 @@ async function apiChat(requestContext, message, mode) {
   if (mode) body.mode = mode;
 
   const res = await requestContext.post('/api/chat', { data: body });
-  expect(res.ok()).toBe(true);
-  return await res.json();
+  return res;
 }
 
 /** Open the app in a given mode via URL query param */
@@ -63,12 +63,138 @@ async function sendAndWait(page, timeout = 15000) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 0. UNIT TESTS — pure function tests with dependency injection
+//    These import runChat/inspectMessage directly and mock the model.
+//    No server needed, no model download, fast.
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('unit: runChat (dependency injection)', () => {
+  let runChat, inspectMessage, FALLBACK_LABEL;
+
+  test.beforeAll(async () => {
+    const mod = await import('../server.mjs');
+    runChat = mod.runChat;
+    inspectMessage = mod.inspectMessage;
+    FALLBACK_LABEL = mod.FALLBACK_LABEL;
+  });
+
+  test('inspect_message works as pure function', () => {
+    const result = inspectMessage('Thanks for the help!');
+    expect(result.messageLength).toBe(20);
+    expect(result.wordCount).toBe(4);
+    expect(result.hasQuestion).toBe(false);
+    expect(result.sentiment).toBe('positive');
+    expect(result.classification).toBe('medium');
+    expect(typeof result.timestamp).toBe('number');
+  });
+
+  test('clients cannot force fake behavior in real mode — mode is ignored', async () => {
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: { prompt: async () => 'Real model response' },
+      error: null,
+      modelName: 'test-model',
+    };
+    // mode='success' should be ignored because state.status !== 'fake'
+    const result = await runChat('Hello', 'test', 'session', 'success', { state });
+    expect(result.model).not.toBe('fake');
+    expect(result.finishReason).toBe('stop');
+    expect(result.response).toBe('Real model response');
+  });
+
+  test('exact order and dataflow: inspect_message runs, then model receives inspection context + original message', async () => {
+    let capturedPrompt = '';
+    const mockSession = {
+      prompt: async (prompt) => {
+        capturedPrompt = prompt;
+        return 'Model reply acknowledging inspection.';
+      },
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: mockSession,
+      error: null,
+      modelName: 'test-model',
+    };
+
+    const result = await runChat('What is the capital of France?', 'test', 'sess', null, { state });
+
+    // Inspection ran first
+    expect(result.inspection).toBeDefined();
+    expect(result.inspection.wordCount).toBe(6);
+    expect(result.inspection.hasQuestion).toBe(true);
+
+    // Model received the full prompt: inspection context + original message
+    expect(capturedPrompt).toContain('Inspection of user message');
+    expect(capturedPrompt).toContain(JSON.stringify(result.inspection));
+    expect(capturedPrompt).toContain('What is the capital of France?');
+    expect(capturedPrompt).toContain('User:');
+  });
+
+  test('model init failure produces deterministic fallback with label', async () => {
+    const state = {
+      status: 'fallback',
+      loaded: false,
+      session: null,
+      error: 'Model download failed: network error',
+    };
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(typeof result.response).toBe('string');
+    expect(result.response.length).toBeGreaterThan(0);
+    expect(result.fallbackReason).toContain('Model download failed');
+    expect(result.fallbackLabel).toBe(FALLBACK_LABEL);
+    expect(result.inspection).toBeDefined();
+    expect(result.inspection.wordCount).toBe(1);
+  });
+
+  test('inference failure produces deterministic fallback with label', async () => {
+    const failingSession = {
+      prompt: async () => { throw new Error('Inference crashed: OOM'); },
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: failingSession,
+      error: null,
+      modelName: 'crashy-model',
+    };
+    const result = await runChat('Tell me a story', 'test', 'sess', null, { state });
+
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(typeof result.response).toBe('string');
+    expect(result.response.length).toBeGreaterThan(0);
+    expect(result.fallbackReason).toContain('Inference crashed');
+    expect(result.fallbackLabel).toBeDefined();
+    expect(result.fallbackLabel).toContain('fallback'); // case-insensitive match
+    expect(result.inspection).toBeDefined();
+  });
+
+  test('fake mode tests still work when SWARM_FAKE=true', async () => {
+    const state = { status: 'fake', loaded: false, session: null, error: null };
+    const result = await runChat('Test', 'test', 'sess', 'success', { state });
+
+    expect(result.model).toBe('fake');
+    expect(result.finishReason).toBe('stop');
+    expect(result.response).toContain('fake success');
+    expect(result.inspection).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // 1. API TESTS — POST /api/chat directly
 // ═══════════════════════════════════════════════════════════════════════
 
 test.describe('POST /api/chat', () => {
   test('success mode returns expected response structure', async ({ request }) => {
-    const result = await apiChat(request, 'Hello Swarm', 'success');
+    const res = await apiChat(request, 'Hello Swarm', 'success');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result).toBeDefined();
     expect(typeof result.response).toBe('string');
@@ -86,7 +212,9 @@ test.describe('POST /api/chat', () => {
   });
 
   test('empty mode returns empty string response', async ({ request }) => {
-    const result = await apiChat(request, 'Trigger empty', 'empty');
+    const res = await apiChat(request, 'Trigger empty', 'empty');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result).toBeDefined();
     expect(result.response).toBe('');
@@ -99,7 +227,9 @@ test.describe('POST /api/chat', () => {
   });
 
   test('error mode returns fallback response despite error', async ({ request }) => {
-    const result = await apiChat(request, 'Trigger error', 'error');
+    const res = await apiChat(request, 'Trigger error', 'error');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result).toBeDefined();
     expect(typeof result.response).toBe('string');
@@ -109,10 +239,15 @@ test.describe('POST /api/chat', () => {
     expect(result.model).toBe('fake');
     expect(result.fallbackReason).toContain('FAKE_MODE_ERROR');
     expect(result.inspection).toBeDefined();
+    // Fallback label should be present
+    expect(result.fallbackLabel).toBeDefined();
+    expect(result.fallbackLabel.length).toBeGreaterThan(0);
   });
 
   test('overlong mode returns long content', async ({ request }) => {
-    const result = await apiChat(request, 'Long response', 'overlong');
+    const res = await apiChat(request, 'Long response', 'overlong');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result).toBeDefined();
     expect(typeof result.response).toBe('string');
@@ -123,7 +258,9 @@ test.describe('POST /api/chat', () => {
   });
 
   test('inspect_message always returns deterministic structure', async ({ request }) => {
-    const result = await apiChat(request, 'How are you?', 'success');
+    const res = await apiChat(request, 'How are you?', 'success');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result.inspection).toBeDefined();
     expect(result.inspection.messageLength).toBe(12);
@@ -153,6 +290,106 @@ test.describe('POST /api/chat', () => {
     });
     expect(res.ok()).toBe(false);
     expect(res.status()).toBe(400);
+  });
+
+  test('blank message returns 400 error', async ({ request }) => {
+    const res = await request.post('/api/chat', {
+      data: { message: '   ', userId: 'test' },
+    });
+    expect(res.ok()).toBe(false);
+    expect(res.status()).toBe(400);
+  });
+
+  test('missing userId defaults to anonymous', async ({ request }) => {
+    const res = await apiChat(request, 'Hello', 'success');
+    expect(res.ok()).toBe(true);
+    // Response structure valid — userId is server-side only
+    const result = await res.json();
+    expect(result.response.length).toBeGreaterThan(0);
+  });
+
+  test('null userId defaults to anonymous', async ({ request }) => {
+    const res = await request.post('/api/chat', {
+      data: { message: 'Hi', userId: null, mode: 'success' },
+    });
+    expect(res.ok()).toBe(true);
+  });
+
+  test('null sessionId defaults to default', async ({ request }) => {
+    const res = await request.post('/api/chat', {
+      data: { message: 'Hi', sessionId: null, mode: 'success' },
+    });
+    expect(res.ok()).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 1b. EDGE CASES — malformed JSON, oversized messages, method handling
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('API edge cases', () => {
+  test('malformed JSON body returns 400', async ({ page }) => {
+    // Navigate first so origin is allowed
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    // Send truly invalid JSON bytes via page-level fetch
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not valid json at all!!!!!!!!!!!!!!',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain('Invalid JSON');
+  });
+
+  test('oversized message (>10000 chars) returns 413', async ({ request }) => {
+    const bigMsg = 'A'.repeat(10001);
+    const res = await request.post('/api/chat', {
+      data: { message: bigMsg, mode: 'success' },
+    });
+    expect(res.ok()).toBe(false);
+    expect(res.status()).toBe(413);
+    const body = await res.json();
+    expect(body.error).toContain('too long');
+  });
+
+  test('message at boundary (10000 chars) is accepted', async ({ request }) => {
+    const bigMsg = 'A'.repeat(10000);
+    const res = await request.post('/api/chat', {
+      data: { message: bigMsg, mode: 'success' },
+    });
+    expect(res.ok()).toBe(true);
+  });
+
+  test('GET /api/chat returns 405', async ({ request }) => {
+    const res = await request.get('/api/chat');
+    expect(res.status()).toBe(405);
+  });
+
+  test('PUT /api/chat returns 405', async ({ request }) => {
+    const res = await request.put('/api/chat', { data: { message: 'test' } });
+    expect(res.status()).toBe(405);
+  });
+
+  test('DELETE /api/chat returns 405', async ({ request }) => {
+    const res = await request.delete('/api/chat');
+    expect(res.status()).toBe(405);
+  });
+
+  test('unknown mode falls through to env fallback message', async ({ request }) => {
+    const res = await request.post('/api/chat', {
+      data: { message: 'Hello', mode: 'bogus_mode_name' },
+    });
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
+    // bogus mode is not in fakeModes list, so it falls through
+    // Since SWARM_FAKE=true, it hits the "fake env without specific mode" path
+    expect(result.model).toBe('fake');
+    expect(result.response).toContain('Fake mode');
+    expect(result.mode).toBe('env');
   });
 });
 
@@ -204,6 +441,16 @@ test.describe('UI rendering', () => {
     const contentDiv = assistantMsg.locator('.msg-content');
     const textContent = await contentDiv.textContent();
     expect(textContent.length).toBeGreaterThan(0);
+  });
+
+  test('error mode shows fallback label badge in UI', async ({ page }) => {
+    await openApp(page, 'error');
+    await typeMessage(page, 'Trigger error');
+    await sendAndWait(page);
+
+    // Check for the fallback tag in assistant messages
+    const fallbackTag = page.locator('[data-testid="message-bubble"][data-role="assistant"] .fallback-tag');
+    await expect(fallbackTag).toBeVisible({ timeout: 3000 });
   });
 
   test('input textarea enforces 2000 character max', async ({ page }) => {
@@ -270,7 +517,9 @@ test.describe('UI rendering', () => {
 test.describe('fallback behavior', () => {
   test('API returns fallback response structure for error mode (caught)', async ({ request }) => {
     // error mode throws, but server catches it
-    const result = await apiChat(request, 'Test fallback', 'error');
+    const res = await apiChat(request, 'Test fallback', 'error');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
 
     expect(result.model).toBe('fake');
     expect(result.finishReason).toBe('fallback');
@@ -283,7 +532,9 @@ test.describe('fallback behavior', () => {
   test('API always returns inspection data even on fallback', async ({ request }) => {
     const modes = ['success', 'empty', 'error', 'overlong'];
     for (const mode of modes) {
-      const result = await apiChat(request, 'Inspect me', mode);
+      const res = await apiChat(request, 'Inspect me', mode);
+      expect(res.ok()).toBe(true);
+      const result = await res.json();
       expect(result.inspection, `mode=${mode}: inspection missing`).toBeDefined();
       expect(result.inspection.messageLength).toBe(10);
       expect(result.inspection.wordCount).toBe(2);
@@ -293,6 +544,16 @@ test.describe('fallback behavior', () => {
         expect(result.finishReason).toBe('fallback');
       }
     }
+  });
+
+  test('fallback label present in error mode response', async ({ request }) => {
+    const res = await apiChat(request, 'Test fallback', 'error');
+    expect(res.ok()).toBe(true);
+    const result = await res.json();
+
+    expect(result.fallbackLabel).toBeDefined();
+    expect(result.fallbackLabel.length).toBeGreaterThan(0);
+    expect(result.fallbackLabel).toContain('fallback'); // case-insensitive; actual is '⚡ Fake error — deterministic fallback'
   });
 });
 

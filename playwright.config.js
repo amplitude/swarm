@@ -26,7 +26,7 @@ export default defineConfig({
   webServer: {
     command: 'SWARM_FAKE=true node server.mjs',
     url: 'http://localhost:4173',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 10_000,
   },
 });

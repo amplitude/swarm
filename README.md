@@ -53,11 +53,12 @@ Client sends POST /api/chat { message, userId, sessionId }
   ──→ { response, inspection, model }   # JSON response
 ```
 
-### Fake query modes
+### Fake query modes (test only — gated on SWARM_FAKE=true)
 
-For testing without model download, pass the `mode` in the request or append
-`?mode=<mode>` to the URL (the frontend forwards it). These modes use the same
-orchestration path but bypass the model entirely:
+For testing without model download, pass the `mode` in the request body or
+append `?mode=<mode>` to the URL (the frontend forwards it). **The `mode`
+parameter is only honored when `SWARM_FAKE=true`** — clients cannot force fake
+behavior on a real server. In production mode, `mode` is silently ignored.
 
 | Mode | Description |
 |------|-------------|
@@ -71,8 +72,10 @@ orchestration path but bypass the model entirely:
 
 If the model fails to download, load, or generate (e.g. missing binary, out of
 memory, incompatible hardware), the server returns a deterministic fallback
-response drawn from a rotating set of templates. The frontend renders this as a
-normal assistant message — no error banners, no stack traces.
+response drawn from a rotating set of templates. The response includes a
+`fallbackLabel` field (e.g. "⚡ Fallback response — model unavailable") which
+the frontend renders as a visible amber badge above the message content.
+The HTTP status is always 200 — the API remains useful after model failures.
 
 ---
 

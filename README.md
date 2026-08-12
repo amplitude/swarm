@@ -1,96 +1,88 @@
-# Swarm — Single-File Local-First Agent
+# Swarm — Local-First Agent
 
-**Everything in one HTML file.** Production UI, CSS, event emitter, tool calling,
-orchestration, WebLLM integration, fake query modes, caps, timeout, abort handling,
-and fallback — all in `index.html`. No build step, no framework, no API keys.
+**Minimal frontend + backend local-agent app.** The frontend is a dumb HTML
+chat UI. All intelligence — `inspect_message`, orchestration, LLM inference —
+lives in the Node.js server. No build step, no framework, no API keys.
 
-The default model (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) is downloaded and
-cached by your browser automatically via WebGPU and `@mlc-ai/web-llm` v0.2.82.
+The server auto-downloads a small GGUF model (TinyLlama-1.1B, ~592 MB) on first
+run and caches it in `~/.node-llama-cpp/models/`. All inference runs locally on
+your CPU/GPU via [node-llama-cpp](https://github.com/withcatai/node-llama-cpp).
 
 ---
 
 ## Quickstart
 
 ```bash
-# Install dependencies (Playwright for testing)
+# Install dependencies (node-llama-cpp + Playwright for testing)
 npm install
 
-# Start the static server
+# Start the server (auto-downloads TinyLlama-1.1B on first run)
 npm start
+
+# Or run in fake mode (no model, no download, no GPU needed)
+npm run start:fake
 ```
 
-Open **http://localhost:4173/** in Chrome 113+ (or any WebGPU-enabled browser).
+Open **http://localhost:4173/** in any browser.
 
 ---
 
 ## How it works
 
-| Concern | Swarm (single-file) |
-|---------|---------------------|
-| Architecture | 1 file: `index.html` (~41 KB) |
-| LLM | WebLLM via `@mlc-ai/web-llm` 0.2.82 from CDN |
-| Model | `SmolLM2-135M-Instruct-q0f16-MLC` (~180 MB download, ~359 MB VRAM) |
-| Tool | `inspect_message` — always called before every response |
-| Events | `CustomEvent('agent-event')` + `window.agentEvents[]` |
-| Input cap | 2000 characters |
-| Response cap | 600 characters display |
-| Timeout | 30 seconds per turn |
-| Cost | $0 (your GPU + browser) |
-| Setup | Zero — opens and runs |
+| Concern | Swarm |
+|---------|-------|
+| Frontend | `index.html` — dumb chat UI, sends fetch POST to `/api/chat` |
+| Backend | `server.mjs` — static server + `POST /api/chat` endpoint |
+| LLM | `node-llama-cpp` — native Node.js bindings to llama.cpp |
+| Model | TinyLlama-1.1B-Chat-v1.0 (Q3_K_L, ~592 MB, auto-downloaded) |
+| Tool | `inspect_message` — deterministic, always runs before response |
+| Fallback | If model load fails → useful static response (no crash) |
+| Fake mode | `SWARM_FAKE=true` — zero imports, zero downloads, zero inference |
+| Cost | $0 (your CPU/GPU) |
 | API keys | None needed |
-| Privacy | Everything in your browser |
-| Offline | Works fully offline after first load |
+| Privacy | Everything runs locally |
 
 ### Orchestration per turn
 
-Every accepted user turn follows the same app-orchestrated flow:
-
-1. **`user_message`** event fires when the user sends a message
-2. **`inspect_message` tool** is called automatically (not by the LLM)
-3. Tool result + user message → LLM for response generation
-4. **`ai_response`** event fires with the model's response
+Every chat request follows the same flow:
 
 ```
-User sends message ──→ user_message event
-                    ──→ inspect_message() tool executes (deterministic)
-                    ──→ LLM generates response (WebLLM or fake)
-                    ──→ ai_response event
+Client sends POST /api/chat { message, userId, sessionId }
+  ──→ server.inspectMessage(message)    # deterministic tool
+  ──→ server.llamaSession.prompt(...)   # local LLM inference
+  ──→ { response, inspection, model }   # JSON response
 ```
 
-### Fake query modes
+### Fake query modes (test only — gated on SWARM_FAKE=true)
 
-For testing without WebGPU, append `?mode=<mode>` to the URL. These modes
-use the same orchestration path but bypass WebGPU/model import entirely:
+For testing without model download, pass the `mode` in the request body or
+append `?mode=<mode>` to the URL (the frontend forwards it). **The `mode`
+parameter is only honored when `SWARM_FAKE=true`** — clients cannot force fake
+behavior on a real server. In production mode, `mode` is silently ignored.
 
-| Mode | URL | Behavior |
-|------|-----|----------|
-| success | `?mode=success` | Returns a fake successful response |
-| empty | `?mode=empty` | Returns no content (tests fallback) |
-| overlong | `?mode=overlong` | Returns content >600 chars (tests cap) |
-| error | `?mode=error` | Simulates an error during generation |
-| timeout | `?mode=timeout` | Hangs until the 30s timeout triggers |
+| Mode | Description |
+|------|-------------|
+| `success` | Returns a canned success response |
+| `empty` | Returns empty string (tests empty handling) |
+| `error` | Simulates an error (caught, returns fallback) |
+| `overlong` | Returns content >600 chars |
+| `timeout` | Returns immediately (no actual timeout at API level) |
 
-All fake modes produce zero external API requests and require no WebGPU.
+### Fallback
 
-### Download vs local inference
-
-The `@mlc-ai/web-llm` library is loaded from CDN on first page load (~3 MB JS).
-The model (`SmolLM2-135M-Instruct-q0f16-MLC`) is then downloaded and cached by
-your browser (~180 MB). All inference runs locally on your GPU via WebGPU.
-
-**Why download?** WebLLM packages model weights as downloadable assets that are
-cached by the browser's Cache API. This avoids bundling hundreds of MB into the
-repo while still enabling fully offline inference after the first download.
-
-**Why not an inference API?** No data leaves your machine. No API keys, no
-per-token billing, no rate limits, no vendor lock-in.
+If the model fails to download, load, or generate (e.g. missing binary, out of
+memory, incompatible hardware), the server returns a deterministic fallback
+response drawn from a rotating set of templates. The response includes a
+`fallbackLabel` field (e.g. "⚡ Fallback response — model unavailable") which
+the frontend renders as a visible amber badge above the message content.
+The HTTP status is always 200 — the API remains useful after model failures.
 
 ---
 
 ## Testing
 
 ```bash
-# Run all tests (requires server to be running or uses webServer in playwright config)
+# Run all tests (starts server in fake mode automatically)
 npx playwright test
 
 # Run with visible browser
@@ -100,89 +92,81 @@ npx playwright test --headed
 npx playwright test tests/agent.spec.js
 ```
 
+### Real-model smoke test (not CI)
+
+To verify the server works with a real model (auto-downloads TinyLlama-1.1B,
+~592 MB on first run, cached in `~/.node-llama-cpp/`):
+
+```bash
+# Start without SWARM_FAKE (real model mode)
+SWARM_FAKE='' node server.mjs &
+SERVER_PID=$!
+sleep 5  # wait for model download + load on first run, ~2s on subsequent runs
+
+curl -s -X POST http://localhost:4173/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"What is the capital of France?","userId":"smoke","sessionId":"smoke"}'
+
+echo ""
+kill $SERVER_PID 2>/dev/null
+```
+
+> **Note**: This smoke test is intentionally **not** run in CI. It requires
+> a ~592 MB model download on first run and GPU/CPU inference hardware.
+> CI uses `SWARM_FAKE=true` exclusively.
+
 ### Test coverage
 
-A single test file (`tests/agent.spec.js`) covers:
+Three test domains covering all fake modes, API contracts, UI rendering,
+and HTTP-level integration:
 
-| # | Test | What it verifies |
-|---|------|-----------------|
-| 1 | Success order | `user_message` → `inspect_message` → `ai_response` in sequence |
-| 2 | Deterministic tool | `inspect_message` returns expected structure every time |
-| 3 | Event hook | `CustomEvent('agent-event')` fires; `window.agentEvents` populated |
-| 4 | Input cap | 2000-char textarea `maxlength` enforced |
-| 5 | Empty fallback | Empty model response triggers `diagnostic_error` + fallback |
-| 6 | Error fallback | Error mode produces `diagnostic_error` event |
-| 7 | Overlong cap | Response >600 chars is truncated |
-| 8 | Timeout | 30s timeout triggers `generation_stopped` event |
-| 9 | Duplicate suppression | Second send blocked while generating |
-| 10 | No external requests | All 5 fake modes make zero API calls |
+**API tests** (via `request` fixture):
+- Success mode returns expected response structure (response, finishReason, model, inspection)
+- Empty mode returns empty string response
+- Error mode returns fallback response despite simulated error
+- Overlong mode returns content >600 chars
+- `inspect_message` always returns deterministic structure
+- Empty message returns 400 error
+
+**UI tests** (via `page` fixture):
+- User and assistant messages render correctly
+- Empty response shows `[No response]` fallback
+- 2000-char input cap enforced
+- Clear button removes all messages
+- Mode badge visible for fake modes
+- Chat area centered with symmetric padding
+- Messages respect 85% max-width constraint
+
+**HTTP-level integration tests** (real mode, injected state):
+- Client-supplied fake mode cannot force fake behavior on a real server
+- `loading` state returns HTTP 200 with `finishReason: "fallback"`, `fallbackLabel`, and `inspect_message`
+- `fallback` state returns HTTP 200 with useful body and error details
+- Inference failure returns HTTP 200 deterministic fallback
+- `inspect_message` is present on every response path (loading, fallback, inference crash)
+- Response body is always a useful non-empty string with deterministic content
 
 ---
 
 ## Files
 
 ```
-├── index.html            ← Everything: UI, CSS, JS, WebLLM, orchestration
-├── server.mjs            ← Minimal Node.js static file server
-├── package.json          ← Playwright + npm scripts
+├── index.html            ← Dumb chat UI (no model logic)
+├── server.mjs            ← Node.js server + model + orchestration
+├── package.json          ← node-llama-cpp + Playwright
 ├── playwright.config.js  ← Playwright test configuration
 ├── tests/
-│   └── agent.spec.js     ← Single comprehensive test file
-├── .github/              ← CI/CD workflows (preserved)
+│   └── agent.spec.js     ← API + UI tests
+├── .github/              ← CI/CD workflows
 └── LICENSE               ← MIT license
 ```
 
 ---
 
-## Architecture
+## Environment variables
 
-### Event system
-
-Two ways to observe events:
-
-```javascript
-// 1. CustomEvent listener
-document.addEventListener('agent-event', (e) => {
-  console.log(e.detail.type, e.detail.data);
-});
-
-// 2. window.agentEvents array (appended on every dispatch)
-console.log(window.agentEvents);
-```
-
-Event types: `user_message`, `tool_call`, `ai_response`, `diagnostic_error`, `generation_stopped`
-
-### data-testid selectors
-
-All interactive elements carry stable `data-testid` attributes:
-
-| Selector | Element |
-|----------|---------|
-| `[data-testid="status-bar"]` | Top status bar |
-| `[data-testid="status-dot"]` | Status indicator dot |
-| `[data-testid="status-text"]` | Status text |
-| `[data-testid="composer-input"]` | Message input textarea |
-| `[data-testid="send-btn"]` | Send button |
-| `[data-testid="stop-btn"]` | Stop generation button |
-| `[data-testid="char-count"]` | Character count display |
-| `[data-testid="message-bubble"]` | Individual message bubble |
-| `[data-testid="tool-call-card"]` | Tool call result card |
-| `[data-testid="error-banner"]` | Error notification banner |
-| `[data-testid="clear-chat-btn"]` | Clear conversation button |
-| `[data-testid="theme-toggle-btn"]` | Theme toggle button |
-
-### Configuration
-
-All limits are defined as `CONFIG` constants at the top of the script in `index.html`:
-
-| Constant | Default | Description |
+| Variable | Default | Description |
 |----------|---------|-------------|
-| `MAX_INPUT_CHARS` | 2000 | Input textarea character limit |
-| `MAX_TOKENS` | 128 | `max_tokens` sent to the LLM |
-| `STREAM_COLLECT` | 1000 | Chars collected before emitting final response |
-| `MAX_RESPONSE_CHARS` | 600 | Display cap for response text |
-| `TIMEOUT_MS` | 30000 | Per-turn timeout in milliseconds |
-| `DEFAULT_MODEL` | `SmolLM2-135M-Instruct-q0f16-MLC` | Model loaded on startup |
+| `SWARM_FAKE` | *(unset)* | Set to `true` to skip model loading entirely |
 
 ---
 

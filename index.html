@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
 <title>Swarm — Local-First Agent</title>
 
-<!-- @mlc-ai/web-llm 0.2.84 — npm-installed, locally served as ES module -->
-<!-- Dynamically imported at runtime in WebLLMProvider.load() -->
-
 <style>
 /* ═══════════════════════════════════════════════════════════════════════
    RESET + BASE
@@ -49,19 +46,10 @@ textarea{font:inherit;resize:none}
   width:8px;height:8px;border-radius:50%;flex-shrink:0;
 }
 #status-bar .status-dot.idle{background:hsl(240 10% 58%)}
-#status-bar .status-dot.loading{background:hsl(41 96% 56%);animation:pulse 1s infinite}
 #status-bar .status-dot.ready{background:hsl(160 64% 52%)}
 #status-bar .status-dot.error{background:hsl(0 83% 60%)}
 #status-bar .status-dot.generating{background:hsl(229 91% 65%);animation:pulse 1s infinite}
 #status-bar .status-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#status-bar .progress-bar{
-  width:80px;height:4px;background:hsl(240 17% 29%);border-radius:2px;overflow:hidden;flex-shrink:0;
-}
-#status-bar .progress-bar .fill{
-  height:100%;background:hsl(229 91% 65%);border-radius:2px;transition:width .3s;
-}
-#status-bar button{font-size:11px;padding:2px 6px;border-radius:4px;color:hsl(229 91% 65%)}
-#status-bar button:hover{background:hsl(240 18% 20%)}
 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
@@ -101,24 +89,16 @@ textarea{font:inherit;resize:none}
 }
 .message.user{
   background:hsl(233 81% 59%);color:hsl(240 11% 97%);
-  margin-left:auto;border-bottom-right-radius:4px;
+  border-bottom-left-radius:4px;
 }
 .message.assistant{
   background:hsl(240 21% 17%);color:hsl(240 11% 97%);
-  margin-right:auto;border-bottom-left-radius:4px;
+  border-bottom-left-radius:4px;
   border:1px solid hsl(240 17% 29%);
 }
 .message.system{
   background:transparent;color:hsl(240 10% 58%);font-size:12px;text-align:center;max-width:100%;
   padding:4px 8px;
-}
-.message.tool{
-  background:hsl(240 18% 20%);color:hsl(240 11% 72%);font-size:12px;
-  margin-right:auto;border-radius:8px;font-family:"JetBrains Mono","Fira Code",monospace;
-}
-.message.error{
-  background:hsl(0 83% 60% / .15);color:hsl(0 83% 60%);border:1px solid hsl(0 83% 60% / .3);
-  margin-right:auto;border-bottom-left-radius:4px;
 }
 .message .msg-label{font-size:11px;font-weight:600;opacity:.6;margin-bottom:4px}
 .message .msg-content{line-height:1.55}
@@ -126,7 +106,15 @@ textarea{font:inherit;resize:none}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
-/* Streaming cursor */
+/* Fallback tag — visible label on fallback/offline responses */
+.message.assistant .fallback-tag{
+  display:inline-block;margin-top:6px;padding:2px 8px;border-radius:4px;
+  font-size:10px;font-weight:600;line-height:1.4;
+  background:hsl(38 92% 50% / .15);color:hsl(38 92% 50%);
+  border:1px solid hsl(38 92% 50% / .3);
+}
+
+/* Streaming cursor (simple blink while waiting) */
 .message.assistant.streaming .msg-content::after{
   content:'▊';animation:blink .8s step-end infinite;color:hsl(229 91% 65%);
 }
@@ -175,44 +163,13 @@ textarea{font:inherit;resize:none}
   padding:6px 12px;border-radius:8px;
   background:hsl(0 83% 60%);color:white;font-size:13px;font-weight:600;
 }
-#composer button.stop-btn:hover{opacity:.85}
 #composer .composer-hint{
   font-size:11px;color:hsl(240 10% 58%);padding:2px 4px;
   text-align:center;margin-top:4px;
 }
 
-/* ── Error banner ── */
-#error-banner{
-  display:none;
-  margin:0 12px 4px;padding:8px 12px;
-  background:hsl(0 83% 60% / .12);
-  border:1px solid hsl(0 83% 60% / .25);
-  border-radius:8px;
-  color:hsl(0 83% 60%);
-  font-size:13px;
-  flex-shrink:0;
-}
-
-/* ── Tool call display ── */
-.tool-call-card{
-  margin:4px 0 8px auto;max-width:85%;
-  background:hsl(240 18% 20%);
-  border:1px solid hsl(240 17% 29%);
-  border-radius:8px;
-  padding:8px 12px;
-  font-size:12px;
-  color:hsl(240 11% 72%);
-  animation:fadeIn .2s ease-out;
-}
-.tool-call-card .tc-header{
-  display:flex;align-items:center;gap:6px;margin-bottom:4px;
-  font-weight:600;color:hsl(229 91% 65%);
-}
-.tool-call-card .tc-result{color:hsl(160 64% 52%)}
-.tool-call-card .tc-error{color:hsl(0 83% 60%)}
-
-/* ── Mode badge ── */
-#mode-badge{
+/* ── Model badge ── */
+#model-badge{
   position:fixed;top:32px;right:8px;
   padding:2px 8px;border-radius:4px;
   font-size:10px;font-weight:600;
@@ -238,11 +195,7 @@ textarea{font:inherit;resize:none}
   <!-- Status Bar -->
   <div id="status-bar" data-testid="status-bar">
     <span class="status-dot idle" data-testid="status-dot"></span>
-    <span class="status-text" data-testid="status-text">Initializing...</span>
-    <div class="progress-bar" id="progress-bar" style="display:none" data-testid="progress-bar">
-      <div class="fill" style="width:0%"></div>
-    </div>
-    <button id="retry-model-btn" style="display:none" data-testid="retry-model-btn">Retry</button>
+    <span class="status-text" data-testid="status-text">Connecting to server…</span>
   </div>
 
   <!-- Header -->
@@ -253,18 +206,14 @@ textarea{font:inherit;resize:none}
     </div>
     <div class="header-actions">
       <button id="clear-chat-btn" data-testid="clear-chat-btn" title="Clear conversation">Clear</button>
-      <button id="theme-toggle-btn" data-testid="theme-toggle-btn" title="Toggle theme">☀</button>
     </div>
   </div>
-
-  <!-- Error banner -->
-  <div id="error-banner" data-testid="error-banner"></div>
 
   <!-- Chat area -->
   <div id="chat-area" data-testid="chat-area" role="log" aria-label="Chat messages">
     <div class="empty-state" id="empty-state" data-testid="empty-state">
       <h2>Welcome to Swarm</h2>
-      <p>Local-first agent chat powered by WebLLM. Type a message to start.</p>
+      <p>Local-first agent chat powered by Node + llama.cpp. Type a message to start.</p>
     </div>
   </div>
 
@@ -281,600 +230,118 @@ textarea{font:inherit;resize:none}
       ></textarea>
       <span class="char-count" id="char-count" data-testid="char-count">0/2000</span>
       <div class="composer-actions">
-        <button class="stop-btn" id="stop-btn" data-testid="stop-btn" style="display:none">Stop</button>
         <button class="send-btn" id="send-btn" data-testid="send-btn" disabled>Send</button>
       </div>
     </div>
-    <div class="composer-hint" id="composer-hint" data-testid="composer-hint">Press Enter to send · Shift+Enter for newline</div>
+    <div class="composer-hint" data-testid="composer-hint">Press Enter to send · Shift+Enter for newline</div>
   </div>
 </div>
 
-<!-- Mode badge (shown for fake modes) -->
-<div id="mode-badge" style="display:none" data-testid="mode-badge"></div>
+<!-- Model badge (shown for fake/fallback) -->
+<div id="model-badge" style="display:none" data-testid="model-badge"></div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════
-   SWARM — Single-File Local-First Agent
+   SWARM — Dumb Frontend
    ═══════════════════════════════════════════════════════════════════════
 
-   Everything in one file: UI, CSS, event emitter, tool, orchestration,
-   WebLLM integration, fake modes, caps, timeout, abort, fallback.
+   Minimal UI that sends messages to POST /api/chat and displays responses.
+   All intelligence lives on the server. No model runs in the browser.
 
-   Architecture per turn:
-     1. user_message event fires
-     2. System calls inspect_message tool (deterministic)
-     3. inspect result + user message → LLM
-     4. LLM generates ai_response
-     5. ai_response event fires
-
-   Exposes:
-     - document CustomEvent('agent-event')
-     - window.agentEvents[]
-     - data-testid selectors on all interactive elements
+   Fake mode (testing): ?mode=success|empty|error|overlong|timeout
+   ─ passed to server in the request body.
    ═══════════════════════════════════════════════════════════════════════ */
 
 (function(){
 'use strict';
 
-// =========================================================================
-// 1. CONFIGURATION
-// =========================================================================
-
-const CONFIG = {
-  MAX_INPUT_CHARS:    2000,      // Input textarea cap
-  MAX_TOKENS:         128,       // max_tokens sent to LLM
-  STREAM_COLLECT:     1000,      // chars collected before emitting final
-  MAX_RESPONSE_CHARS: 600,       // Display cap for response text
-  TIMEOUT_MS:         30000,     // Per-turn timeout
-  DEFAULT_MODEL:      'SmolLM2-135M-Instruct-q0f16-MLC',
-  WEBLLM_MODULE_PATH: '/node_modules/@mlc-ai/web-llm/lib/index.js',
-};
-
-// =========================================================================
-// 2. DETECT FAKE MODE FROM URL
-// =========================================================================
+// ═══════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════
 
 const urlParams = new URLSearchParams(window.location.search);
-const FAKE_MODE = urlParams.get('mode') || null;
-const VALID_FAKE_MODES = ['success','empty','overlong','error','timeout'];
-const isFakeMode = FAKE_MODE && VALID_FAKE_MODES.includes(FAKE_MODE);
-
-console.log(`[swarm] mode=${FAKE_MODE || 'real'}`);
-
-// =========================================================================
-// 3. EVENT EMITTER
-// =========================================================================
-
-const agentEvents = [];
-
-function emitAgentEvent(type, data) {
-  const detail = { type, data, timestamp: Date.now() };
-  const event = new CustomEvent('agent-event', { detail, bubbles: true });
-  document.dispatchEvent(event);
-  agentEvents.push(detail);
-  console.log(`[agent-event] ${type}`, data);
-}
-
-// Expose globally
-window.agentEvents = agentEvents;
-
-// Expose last request for test introspection (fake mode only)
-window._lastProviderRequest = null;
-
-// =========================================================================
-// 4. STATE
-// =========================================================================
+const MODE = urlParams.get('mode') || null;
+const VALID_MODES = ['success','empty','error','timeout'];
+const isMode = MODE && VALID_MODES.includes(MODE);
 
 const state = {
-  status: isFakeMode ? 'ready' : 'idle',  // idle|loading|ready|error|generating
-  progress: 0,
-  statusText: isFakeMode ? `Fake mode: ${FAKE_MODE}` : 'Initializing...',
-  modelName: isFakeMode ? null : CONFIG.DEFAULT_MODEL,
-  error: null,
   messages: [],
+  status: 'idle',
+  statusText: isMode ? 'Fake mode: ' + MODE : 'Connecting to server…',
   isGenerating: false,
-  abortController: null,
-  lastMessageText: null,
-  theme: 'dark',  // dark|light
-  conversationTitle: 'New conversation',
-  _abortReason: null,           // 'GENERATION_TIMEOUT' | 'ABORTED' | null
+  modelInfo: null,
 };
-
-// =========================================================================
-// 5. TOOL: inspect_message (only tool)
-// =========================================================================
-
-const TOOL_INSPECT = {
-  type: 'function',
-  function: {
-    name: 'inspect_message',
-    description: 'Inspect and classify the user message before responding. Always called once per turn.',
-    parameters: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', description: 'The user message to inspect' },
-      },
-      required: ['message'],
-    },
-  },
-};
-
-async function executeInspectMessage(params) {
-  const message = (params && params.message) || '';
-  const result = {
-    messageLength: message.length,
-    wordCount: message.split(/\s+/).filter(Boolean).length,
-    hasQuestion: message.includes('?'),
-    hasExclamation: message.includes('!'),
-    hasCode: /`|```|function|const|let|var|import|export/.test(message),
-    isOverlong: message.length > CONFIG.MAX_INPUT_CHARS,
-    classification: message.length < 10 ? 'short' : message.length < 100 ? 'medium' : 'long',
-    sentiment: /thank|great|awesome|nice|good|love/i.test(message) ? 'positive'
-             : /bad|terrible|awful|hate|wrong|error/i.test(message) ? 'negative'
-             : 'neutral',
-    timestamp: Date.now(),
-  };
-  return { success: true, output: JSON.stringify(result) };
-}
-
-// =========================================================================
-// 6. LLM PROVIDER
-// =========================================================================
-
-class FakeProvider {
-  constructor(mode) { this.mode = mode; this._loaded = true; this._model = null; }
-  isLoaded() { return true; }
-  getLoadedModel() { return null; }
-  async load() { /* no-op */ }
-  async unload() { /* no-op */ }
-  interrupt() { /* no-op — fake provider ignores cancellation */ }
-
-  async *generate(request) {
-    const timeoutMs = CONFIG.TIMEOUT_MS;
-    // Store request for test introspection (max_tokens, tool count, caps)
-    window._lastProviderRequest = request;
-
-    switch (this.mode) {
-      case 'success': {
-        const tokens = 'This is a fake success response from the Swarm agent. The inspect_message tool has classified your input and I am responding accordingly. All systems nominal.';
-        for (let i = 0; i < tokens.length; i += 3) {
-          await sleep(15);
-          if (request.signal && request.signal.aborted) {
-            yield { finishReason: 'stop' };
-            return;
-          }
-          yield { content: tokens.slice(i, i + 3) };
-        }
-        yield { finishReason: 'stop' };
-        return;
-      }
-      case 'empty': {
-        // Return no content chunks, just a finish reason
-        await sleep(30);
-        if (request.signal && request.signal.aborted) {
-          yield { finishReason: 'stop' };
-          return;
-        }
-        yield { finishReason: 'stop' };
-        return;
-      }
-      case 'overlong': {
-        // Generate a response well over 600 chars, yielding chunks that
-        // cross the 1000-char boundary to test partial-chunk truncation.
-        const longText = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(30);
-        for (let i = 0; i < longText.length; i += 7) {
-          if (request.signal && request.signal.aborted) {
-            yield { finishReason: 'stop' };
-            return;
-          }
-          await sleep(5);
-          yield { content: longText.slice(i, i + 7) };
-        }
-        yield { finishReason: 'stop' };
-        return;
-      }
-      case 'error': {
-        await sleep(50);
-        if (request.signal && request.signal.aborted) {
-          yield { finishReason: 'stop' };
-          return;
-        }
-        throw new Error('FAKE_MODE_ERROR: Simulated model error for testing fallback behavior.');
-      }
-      case 'timeout': {
-        // Intentionally produce a late result after the 30s timeout
-        // would have fired, simulating a provider that responds belatedly
-        // or otherwise ignores abort in a controlled way.
-        const lateDelayMs = timeoutMs + 2000;
-        while (true) {
-          await sleep(100);
-          const elapsed = Date.now() - (request._startTime || Date.now());
-          if (elapsed >= lateDelayMs) break;
-        }
-        yield { content: 'Late arrival after timeout.' };
-        yield { finishReason: 'stop' };
-        return;
-      }
-      default: {
-        yield { content: 'Unknown mode.', finishReason: 'stop' };
-      }
-    }
-  }
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-class WebLLMProvider {
-  constructor() {
-    this._engine = null;
-    this._loadedModel = null;
-  }
-
-  isLoaded() { return this._engine !== null && this._loadedModel !== null; }
-  getLoadedModel() { return this._loadedModel; }
-
-  async load(modelId, onProgress) {
-    if (this._loadedModel === modelId && this._engine) return;
-    if (this._engine) await this.unload();
-
-    if (!navigator.gpu) {
-      throw new Error('WebGPU is not available in this browser. Use Chrome 113+ or Edge 113+.');
-    }
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      throw new Error('No WebGPU adapter found. Your GPU or drivers may not be supported.');
-    }
-
-    // Dynamically import web-llm from the npm-installed local path
-    let webllm;
-    try {
-      webllm = await import(CONFIG.WEBLLM_MODULE_PATH);
-    } catch (importErr) {
-      throw new Error(
-        'Failed to load web-llm module from local path. ' +
-        'Ensure @mlc-ai/web-llm is installed (npm install). ' +
-        'For testing without WebGPU, use ?mode=success. ' +
-        `Original error: ${importErr.message}`
-      );
-    }
-
-    if (!webllm.CreateMLCEngine) {
-      throw new Error('WebLLM module loaded but CreateMLCEngine export not found.');
-    }
-
-    const initProgressCallback = (report) => {
-      if (onProgress) onProgress(report.progress, report.text);
-    };
-
-    this._engine = await webllm.CreateMLCEngine(modelId, { initProgressCallback });
-    this._loadedModel = modelId;
-  }
-
-  async *generate(request) {
-    if (!this._engine) throw new Error('Engine not loaded.');
-
-    const hasTools = !!(request.tools && request.tools.length > 0);
-    const mappedMessages = request.messages.map(m => ({
-      role: m.role,
-      content: m.content,
-      ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
-    }));
-
-    const completionRequest = {
-      messages: mappedMessages,
-      stream: true,
-      stream_options: { include_usage: true },
-      temperature: request.temperature || 0.7,
-      max_tokens: request.max_tokens || CONFIG.MAX_TOKENS,
-    };
-    if (hasTools) {
-      completionRequest.tools = request.tools;
-      completionRequest.tool_choice = 'auto';
-    }
-
-    const chunks = await this._engine.chat.completions.create(completionRequest);
-    const accumulatedToolCalls = new Map();
-
-    for await (const chunk of chunks) {
-      const choice = chunk.choices && chunk.choices[0];
-      if (!choice) continue;
-
-      const delta = choice.delta;
-      const streamChunk = { finishReason: choice.finish_reason || null };
-
-      if (delta && delta.content) {
-        streamChunk.content = delta.content;
-      }
-
-      if (delta && delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index || 0;
-          const existing = accumulatedToolCalls.get(idx);
-          if (existing) {
-            existing.arguments += (tc.function && tc.function.arguments) || '';
-          } else {
-            accumulatedToolCalls.set(idx, {
-              id: tc.id || `call_${idx}`,
-              functionName: (tc.function && tc.function.name) || '',
-              arguments: (tc.function && tc.function.arguments) || '',
-            });
-          }
-        }
-      }
-
-      if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
-        if (accumulatedToolCalls.size > 0) {
-          const toolCalls = [];
-          for (const [, tc] of accumulatedToolCalls) {
-            toolCalls.push({
-              id: tc.id,
-              function: { name: tc.functionName, arguments: tc.arguments },
-            });
-          }
-          streamChunk.toolCalls = toolCalls;
-          accumulatedToolCalls.clear();
-        }
-      }
-
-      yield streamChunk;
-    }
-  }
-
-  async interrupt() {
-    if (this._engine && typeof this._engine.interruptGenerate === 'function') {
-      try {
-        await this._engine.interruptGenerate();
-      } catch (e) {
-        console.warn('[swarm] interruptGenerate failed:', e);
-      }
-    }
-  }
-
-  async unload() {
-    if (this._engine) {
-      try { await this._engine.unload(); } catch {}
-      this._engine = null;
-      this._loadedModel = null;
-    }
-  }
-}
-
-// =========================================================================
-// 7. PROVIDER FACTORY
-// =========================================================================
-
-let _providerInstance = null;
-
-function getProvider() {
-  if (_providerInstance) return _providerInstance;
-  if (isFakeMode) {
-    _providerInstance = new FakeProvider(FAKE_MODE);
-  } else {
-    _providerInstance = new WebLLMProvider();
-  }
-  return _providerInstance;
-}
-
-function resetProvider() {
-  if (_providerInstance) {
-    _providerInstance.unload().catch(() => {});
-    _providerInstance = null;
-  }
-}
-
-// =========================================================================
-// 8. LLM CHAT ADAPTER (streaming → non-streaming)
-// =========================================================================
-
-class LLMChatAdapter {
-  constructor(provider, onToken) {
-    this.provider = provider;
-    this.onToken = onToken;
-    this._signal = null;
-  }
-
-  async chatCompletion(request) {
-    let content = '';
-    let finishReason = 'stop';
-    let toolCalls = null;
-
-    for await (const chunk of this.provider.generate({ ...request, signal: this._signal || null })) {
-      if (this._signal && this._signal.aborted) {
-        finishReason = 'stop';
-        break;
-      }
-      if (chunk.content) {
-        content += chunk.content;
-        if (this.onToken) this.onToken(chunk.content);
-      }
-      if (chunk.toolCalls) {
-        toolCalls = chunk.toolCalls.map(tc => ({
-          id: tc.id,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
-        }));
-      }
-      if (chunk.finishReason) {
-        finishReason = chunk.finishReason;
-      }
-    }
-
-    return {
-      content: content || null,
-      toolCalls,
-      finishReason: finishReason === 'tool_calls' ? 'tool_calls'
-                   : finishReason === 'length' ? 'length' : 'stop',
-    };
-  }
-}
-
-// =========================================================================
-// 9. ORCHESTRATOR
-// =========================================================================
-
-class Orchestrator {
-  constructor(adapter) {
-    this.adapter = adapter;
-  }
-
-  async runTurn(userMessage, conversationMessages) {
-    const turn = { messages: [], toolCalls: [], finalResponse: null, iterations: 0 };
-
-    // ── Step 1: Execute inspect_message tool ──
-    turn.iterations++;
-    const inspectResult = await executeInspectMessage({ message: userMessage });
-
-    // Record the tool call
-    const toolCallRecord = {
-      id: `call_inspect_${Date.now()}`,
-      toolId: 'inspect_message',
-      parameters: { message: userMessage },
-    };
-    turn.toolCalls.push(toolCallRecord);
-
-    // ── Step 2: Build LLM request with inspect context ──
-    const systemPrompt = `You are Swarm, a helpful local-first agent assistant. You have access to user messages and message inspection data.
-
-TOOL AVAILABLE:
-- inspect_message: Inspects and classifies user messages. Always called before your response.
-
-RESPONSE GUIDELINES:
-- Respond conversationally to the user.
-- Keep responses concise (under 600 characters).
-- Use the inspect_message result data to inform your response.
-- Never repeat tool definitions to the user.
-- If the user asks about capabilities, explain you're a local-first agent powered by WebLLM.`;
-
-    const llmMessages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: userMessage },
-      { role: 'tool', content: JSON.stringify(inspectResult), tool_call_id: toolCallRecord.id },
-    ];
-
-    const toolDefs = [TOOL_INSPECT];
-
-    // ── Step 3: Call LLM ──
-    const response = await this.adapter.chatCompletion({
-      messages: llmMessages,
-      tools: toolDefs,
-      temperature: 0.7,
-      max_tokens: CONFIG.MAX_TOKENS,
-      _startTime: Date.now(),
-    });
-
-    // ── Step 4: Process response ──
-    if (response.finishReason === 'tool_calls' && response.toolCalls) {
-      for (const tc of response.toolCalls) {
-        if (tc.function.name === 'inspect_message') {
-          let params = {};
-          try { params = JSON.parse(tc.function.arguments); } catch {}
-          const result = await executeInspectMessage(params);
-          turn.toolCalls.push({
-            id: tc.id,
-            toolId: 'inspect_message',
-            parameters: params,
-          });
-          const secondMessages = [...llmMessages,
-            { role: 'assistant', content: `inspect_message(${tc.function.arguments})` },
-            { role: 'tool', content: JSON.stringify(result), tool_call_id: tc.id },
-          ];
-          const secondResponse = await this.adapter.chatCompletion({
-            messages: secondMessages,
-            temperature: 0.7,
-          });
-          if (secondResponse.content) {
-            turn.finalResponse = secondResponse.content;
-          }
-        }
-      }
-    } else if (response.content) {
-      turn.finalResponse = response.content;
-    }
-
-    return turn;
-  }
-}
-
-// =========================================================================
-// 10. CHAT UI RENDERER
-// =========================================================================
 
 const $ = (id) => document.getElementById(id);
+
+// ═══════════════════════════════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════════════════════════════
+
+async function sendToServer(userMessage) {
+  const body = {
+    message: userMessage,
+    userId: 'browser',
+    sessionId: `session_${Date.now()}`,
+  };
+  if (MODE) body.mode = MODE;
+
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error('Server error: ' + (errText || res.statusText));
+  }
+  return await res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════════════
+
 const chatArea = $('chat-area');
 const emptyState = $('empty-state');
 const composerInput = $('composer-input');
 const sendBtn = $('send-btn');
-const stopBtn = $('stop-btn');
 const charCount = $('char-count');
 const statusDot = document.querySelector('#status-bar .status-dot');
 const statusText = document.querySelector('#status-bar .status-text');
-const progressBar = $('progress-bar');
-const progressFill = progressBar ? progressBar.querySelector('.fill') : null;
-const retryBtn = $('retry-model-btn');
-const errorBanner = $('error-banner');
 const composerHint = $('composer-hint');
 const clearBtn = $('clear-chat-btn');
-const themeBtn = $('theme-toggle-btn');
-const modeBadge = $('mode-badge');
+const modeBadge = $('model-badge');
 
 function updateUI() {
   // Status
   statusDot.className = 'status-dot ' + state.status;
-  if (state.status === 'loading') {
-    progressBar.style.display = 'block';
-    if (progressFill) progressFill.style.width = (state.progress * 100) + '%';
-  } else {
-    progressBar.style.display = 'none';
-  }
   statusText.textContent = state.statusText;
-
-  // Update hint based on model status
-  if (state.status === 'error') {
-    composerHint.textContent = 'Model unavailable · draft only';
-    composerHint.style.color = 'hsl(0 83% 60%)';
-  } else {
-    composerHint.textContent = 'Press Enter to send · Shift+Enter for newline';
-    composerHint.style.color = '';
-  }
-
-  retryBtn.style.display = state.status === 'error' ? '' : 'none';
-
-  // Error banner
-  if (state.error) {
-    errorBanner.textContent = state.error;
-    errorBanner.style.display = 'block';
-  } else {
-    errorBanner.style.display = 'none';
-  }
 
   // Send button
   const hasText = composerInput.value.trim().length > 0;
-  sendBtn.disabled = !hasText || state.status === 'loading' || state.isGenerating;
-
-  // Stop button
-  stopBtn.style.display = state.isGenerating ? '' : 'none';
+  sendBtn.disabled = !hasText || state.isGenerating;
 
   // Char count
   const len = composerInput.value.length;
-  charCount.textContent = `${len}/${CONFIG.MAX_INPUT_CHARS}`;
-  charCount.className = 'char-count' + (len >= CONFIG.MAX_INPUT_CHARS ? ' over' : '');
+  charCount.textContent = `${len}/2000`;
+  charCount.className = 'char-count' + (len >= 2000 ? ' over' : '');
 
   // Mode badge
-  if (isFakeMode) {
-    modeBadge.textContent = `mode: ${FAKE_MODE}`;
+  if (isMode || (state.modelInfo && state.modelInfo !== 'tinyllama-1.1b')) {
+    const label = isMode ? 'mode: ' + MODE : (state.modelInfo || 'unknown');
+    modeBadge.textContent = label;
     modeBadge.style.display = '';
   } else {
     modeBadge.style.display = 'none';
   }
 }
 
-function addMessage(role, content, extra = {}) {
-  // Remove empty state if first message
+function addMessage(role, content, extra) {
   if (state.messages.length === 0 && emptyState) {
     emptyState.style.display = 'none';
   }
-
-  const msg = { role, content, id: `msg_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, ...extra };
+  const msg = { role, content, id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), ...extra };
   state.messages.push(msg);
   renderMessage(msg);
   scrollToBottom();
@@ -888,19 +355,17 @@ function renderMessage(msg) {
   el.setAttribute('data-role', msg.role);
   el.setAttribute('data-message-id', msg.id);
 
-  let html = '';
-  if (msg.role === 'assistant' || msg.role === 'user' || msg.role === 'tool') {
-    html += `<div class="msg-label">${msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Swarm' : 'Tool'}</div>`;
+  let html = '<div class="msg-label">' + (msg.role === 'user' ? 'You' : 'Swarm') + '</div>';
+  if (msg.fallbackLabel) {
+    html += '<div class="fallback-tag">' + escapeHtml(msg.fallbackLabel) + '</div>';
   }
-  html += `<div class="msg-content">${escapeHtml(msg.content)}</div>`;
+  html += '<div class="msg-content">' + escapeHtml(msg.content || '') + '</div>';
   if (msg.timestamp) {
-    html += `<div class="msg-timestamp">${new Date(msg.timestamp).toLocaleTimeString()}</div>`;
+    html += '<div class="msg-timestamp">' + new Date(msg.timestamp).toLocaleTimeString() + '</div>';
   }
   el.innerHTML = html;
-
   if (msg._streaming) el.classList.add('streaming');
 
-  // Insert before the empty state
   if (emptyState && emptyState.style.display !== 'none') {
     chatArea.insertBefore(el, emptyState);
   } else {
@@ -913,307 +378,90 @@ function scrollToBottom() {
 }
 
 function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
 }
 
-// =========================================================================
-// 11. CORE: send message
-// =========================================================================
-
-let _lastGenerationTimeout = null;
+// ═══════════════════════════════════════════════════════════════════════
+// CORE: send message
+// ═══════════════════════════════════════════════════════════════════════
 
 async function sendMessage(text) {
-  // Duplicate terminal suppression: prevent sending same text while generating
-  if (state.isGenerating) {
-    console.log('[swarm] suppress: already generating');
-    return;
-  }
-  if (text.length === 0) return;
-  if (text.length > CONFIG.MAX_INPUT_CHARS) {
-    text = text.slice(0, CONFIG.MAX_INPUT_CHARS);
-  }
+  if (state.isGenerating) return;
+  if (!text.trim()) return;
 
   state.isGenerating = true;
-  state.error = null;
-  state.lastMessageText = text;
-  state._prevStatus = state.status;
   state.status = 'generating';
+  state.statusText = 'Generating…';
   updateUI();
 
-  // ── 1. Dispatch user_message event ──
-  emitAgentEvent('user_message', { text, length: text.length, timestamp: Date.now() });
-
-  // ── 2. Add user message to chat ──
+  // Add user message
   addMessage('user', text, { timestamp: Date.now() });
 
-  // ── 3. Create placeholder assistant message ──
-  const placeholderMsg = addMessage('assistant', '▊', { _streaming: true, timestamp: Date.now() });
-
-  // ── 4. Create abort controller + timeout ──
-  const abortController = new AbortController();
-  state.abortController = abortController;
-
-  const timeoutId = setTimeout(() => {
-    if (!abortController.signal.aborted) {
-      state._abortReason = 'GENERATION_TIMEOUT';
-      abortController.abort();
-      getProvider().interrupt();
-      console.log('[swarm] turn timed out after ' + CONFIG.TIMEOUT_MS + 'ms');
-    }
-  }, CONFIG.TIMEOUT_MS);
-
-  _lastGenerationTimeout = timeoutId;
+  // Create placeholder
+  const placeholder = addMessage('assistant', '▊', { _streaming: true, timestamp: Date.now() });
 
   try {
-    // ── 5. Get provider and ensure loaded ──
-    const provider = getProvider();
-    if (!isFakeMode && !provider.isLoaded()) {
-      await provider.load(CONFIG.DEFAULT_MODEL, (progress, text) => {
-        state.progress = progress;
-        state.statusText = `Loading model: ${(progress * 100).toFixed(0)}%`;
-        updateUI();
-      });
-    }
+    const result = await sendToServer(text);
 
-    // Check for abort
-    if (abortController.signal.aborted) {
-      throw new Error('Generation aborted');
-    }
+    state.modelInfo = result.model;
+    let responseText = result.response || '';
 
-    // ── 6. Create adapter and orchestrator ──
-    let streamedContent = '';
-    let hasStreamed = false;
-    let didCollectCap = false;
-
-    const adapter = new LLMChatAdapter(provider, (token) => {
-      // ── Stop once STREAM_COLLECT chars are collected ──
-      if (abortController.signal.aborted) return;
-      hasStreamed = true;
-
-      const remaining = CONFIG.STREAM_COLLECT - streamedContent.length;
-      if (remaining <= 0) {
-        // Already at cap — drop further deltas, interrupt generation
-        if (!didCollectCap) {
-          didCollectCap = true;
-          getProvider().interrupt();
-        }
-        return;
-      }
-
-      // Truncate a chunk that crosses the 1000-char boundary
-      const addContent = token.length <= remaining ? token : token.slice(0, remaining);
-      streamedContent += addContent;
-
-      if (addContent.length < token.length) {
-        didCollectCap = true;
-        getProvider().interrupt();
-      }
-
-      // Update placeholder in real-time (stream display)
-      const lastMsg = state.messages[state.messages.length - 1];
-      if (lastMsg && lastMsg._streaming) {
-        lastMsg.content = streamedContent;
-        const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-        if (msgEl) {
-          msgEl.querySelector('.msg-content').textContent = streamedContent;
-        }
-      }
-      scrollToBottom();
-    });
-
-    // Set signal BEFORE generate is called (fix for timeout detection)
-    adapter._signal = abortController.signal;
-
-    const orchestrator = new Orchestrator(adapter);
-
-    // ── 7. Get conversation history (for context) ──
-    const convMessages = state.messages
-      .filter(m => m.role !== 'system' && m.id !== placeholderMsg.id);
-
-    // ── 8. Emit tool_call event before executing (fires even on error) ──
-    emitAgentEvent('tool_call', {
-      tool: 'inspect_message',
-      parameters: { message: text },
-      timestamp: Date.now(),
-    });
-
-    // ── 9. Run turn ──
-    const turn = await orchestrator.runTurn(text, convMessages);
-
-    // ── 9b. Check if the generation was aborted (timeout or stop button) ──
-    if (abortController.signal.aborted) {
-      const lastMsg = state.messages[state.messages.length - 1];
-      if (lastMsg && lastMsg._streaming) {
-        lastMsg.content = (lastMsg.content || '') + '\n\n*Generation stopped*';
-        lastMsg._streaming = false;
-        const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-        if (msgEl) {
-          msgEl.classList.remove('streaming');
-          msgEl.querySelector('.msg-content').textContent = lastMsg.content;
-        }
-      }
-      const abortCode = state._abortReason || 'GENERATION_TIMEOUT';
-      emitAgentEvent('error', {
-        code: abortCode,
-        message: abortCode === 'ABORTED' ? 'Generation aborted by user' : 'Generation timed out after ' + CONFIG.TIMEOUT_MS + 'ms',
-        timestamp: Date.now(),
-      });
-      emitAgentEvent('ai_response', {
-        content: lastMsg ? lastMsg.content || '' : '',
-        length: lastMsg ? (lastMsg.content || '').length : 0,
-        isError: true,
-        timestamp: Date.now(),
-      });
-      updateUI();
-      return;
-    }
-
-    // ── 10. Apply response caps ──
-    let finalContent = turn.finalResponse || '';
-
-    // Safety net: ensure streamedContent never exceeds STREAM_COLLECT
-    if (streamedContent.length > CONFIG.STREAM_COLLECT) {
-      streamedContent = streamedContent.slice(0, CONFIG.STREAM_COLLECT);
-    }
-    // Safety net: cap the orchestrator's content channel too
-    if (finalContent.length > CONFIG.STREAM_COLLECT) {
-      finalContent = finalContent.slice(0, CONFIG.STREAM_COLLECT);
-      didCollectCap = true;
-    }
-
-    // Determine what was actually collected (before display cap)
-    const collectedChars = streamedContent.length || finalContent.length || 0;
-    const collectionWasTruncated = didCollectCap || collectedChars >= CONFIG.STREAM_COLLECT;
-
-    // Use final response or streamed content for display
-    const displayContent = finalContent || streamedContent || '';
-    const cappedContent = displayContent.slice(0, CONFIG.MAX_RESPONSE_CHARS);
-
-    // ── 11. Update placeholder with final content ──
-    const lastMsg = state.messages[state.messages.length - 1];
-    if (lastMsg && lastMsg._streaming) {
-      lastMsg.content = cappedContent || '[No response from agent]';
+    // Update placeholder
+    const lastMsg = state.messages.find(m => m.id === placeholder.id);
+    if (lastMsg) {
+      lastMsg.content = responseText || '[No response]';
       lastMsg._streaming = false;
-      const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-      if (msgEl) {
-        msgEl.classList.remove('streaming');
-        msgEl.querySelector('.msg-content').textContent = lastMsg.content;
-      }
-    }
-
-    // ── 12. Add tool call card for inspect_message ──
-    if (turn.toolCalls.length > 0) {
-      const lastTc = turn.toolCalls[turn.toolCalls.length - 1];
-      const tcEl = document.createElement('div');
-      tcEl.className = 'tool-call-card';
-      tcEl.setAttribute('data-testid', 'tool-call-card');
-      tcEl.innerHTML = `<div class="tc-header">🔍 inspect_message</div>
-        <div class="tc-result">✓ Message inspected (${lastTc.parameters.message.length} chars)</div>`;
-      chatArea.appendChild(tcEl);
-      scrollToBottom();
-    }
-
-    // ── 13. Handle empty response fallback (emit error BEFORE ai_response) ──
-    const isEmpty = !cappedContent && !hasStreamed;
-    if (isEmpty) {
-      emitAgentEvent('error', {
-        code: 'EMPTY_RESPONSE',
-        message: 'Model returned empty response. Using fallback.',
-        timestamp: Date.now(),
-      });
-      if (lastMsg && lastMsg._streaming === false) {
-        lastMsg.content = '[Fallback response] The model did not produce output. This may happen with very small models.';
-        const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-        if (msgEl) {
-          msgEl.querySelector('.msg-content').textContent = lastMsg.content;
+      lastMsg.fallbackLabel = result.fallbackLabel || null;
+      const el = chatArea.querySelector('[data-message-id="' + lastMsg.id + '"]');
+      if (el) {
+        el.classList.remove('streaming');
+        el.querySelector('.msg-content').textContent = lastMsg.content;
+        // Add fallback tag element if label is present
+        if (result.fallbackLabel && !el.querySelector('.fallback-tag')) {
+          const tag = document.createElement('div');
+          tag.className = 'fallback-tag';
+          tag.textContent = result.fallbackLabel;
+          el.insertBefore(tag, el.querySelector('.msg-content'));
         }
       }
     }
 
-    // ── 14. Dispatch ai_response event ──
-    emitAgentEvent('ai_response', {
-      content: cappedContent || '',
-      length: cappedContent.length,
-      collectedCharacters: collectedChars,
-      collectionTruncated: collectionWasTruncated,
-      isOverlong: displayContent.length > CONFIG.MAX_RESPONSE_CHARS,
-      timestamp: Date.now(),
-    });
+    state.status = 'ready';
+    if (result.model === 'fallback') {
+      state.statusText = 'Fallback mode — model unavailable';
+    } else if (result.model === 'fake') {
+      state.statusText = 'Fake mode';
+    } else {
+      state.statusText = 'Model: ' + result.model;
+    }
+    updateUI();
 
   } catch (err) {
-    const errorMessage = err.message || String(err);
-
-    if (errorMessage === 'Generation aborted') {
-      // Aborted — update the placeholder
-      const lastMsg = state.messages[state.messages.length - 1];
-      if (lastMsg && lastMsg._streaming) {
-        lastMsg.content = (lastMsg.content || '') + '\n\n*Generation stopped*';
-        lastMsg._streaming = false;
-        const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-        if (msgEl) {
-          msgEl.classList.remove('streaming');
-          msgEl.querySelector('.msg-content').textContent = lastMsg.content;
-        }
+    const lastMsg = state.messages.find(m => m.id === placeholder.id);
+    if (lastMsg) {
+      lastMsg.content = "I couldn't reach the server. Please try again.";
+      lastMsg._streaming = false;
+      const el = chatArea.querySelector('[data-message-id="' + lastMsg.id + '"]');
+      if (el) {
+        el.classList.remove('streaming');
+        el.querySelector('.msg-content').textContent = lastMsg.content;
       }
-      emitAgentEvent('error', {
-        code: 'ABORTED',
-        message: 'Generation aborted by user',
-        timestamp: Date.now(),
-      });
-      emitAgentEvent('ai_response', {
-        content: lastMsg ? lastMsg.content || '' : '',
-        length: lastMsg ? (lastMsg.content || '').length : 0,
-        isError: true,
-        timestamp: Date.now(),
-      });
-    } else {
-      // Error — show in chat
-      state.status = 'error';
-      state.error = errorMessage;
-
-      const lastMsg = state.messages[state.messages.length - 1];
-      if (lastMsg && lastMsg._streaming) {
-        emitAgentEvent('error', {
-          code: 'GENERATION_FAILED',
-          message: errorMessage,
-          timestamp: Date.now(),
-        });
-
-        // Fallback: show error message to user
-        lastMsg.content = '⚠️ ' + errorMessage;
-        lastMsg._streaming = false;
-        const msgEl = chatArea.querySelector(`[data-message-id="${lastMsg.id}"]`);
-        if (msgEl) {
-          msgEl.className = 'message error';
-          msgEl.setAttribute('data-role', 'error');
-          msgEl.classList.remove('streaming');
-          msgEl.querySelector('.msg-content').textContent = lastMsg.content;
-        }
-      }
-
-      emitAgentEvent('ai_response', {
-        content: '⚠️ ' + errorMessage,
-        length: errorMessage.length + 2,
-        isError: true,
-        timestamp: Date.now(),
-      });
     }
+    state.status = 'error';
+    state.statusText = 'Connection error';
+    updateUI();
   } finally {
-    clearTimeout(timeoutId);
     state.isGenerating = false;
-    state.status = state._prevStatus || state.status;
-    state.abortController = null;
     updateUI();
   }
 }
 
-// =========================================================================
-// 12. UI EVENT BINDINGS
-// =========================================================================
+// ═══════════════════════════════════════════════════════════════════════
+// UI EVENT BINDINGS
+// ═══════════════════════════════════════════════════════════════════════
 
-// Send button
 sendBtn.addEventListener('click', () => {
   const text = composerInput.value.trim();
   if (text && !sendBtn.disabled) {
@@ -1223,7 +471,6 @@ sendBtn.addEventListener('click', () => {
   }
 });
 
-// Enter to send, Shift+Enter for newline
 composerInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -1236,118 +483,24 @@ composerInput.addEventListener('keydown', (e) => {
   }
 });
 
-// Auto-resize textarea
 composerInput.addEventListener('input', () => {
   composerInput.style.height = 'auto';
   composerInput.style.height = Math.min(composerInput.scrollHeight, 120) + 'px';
   updateUI();
 });
 
-// Stop button
-stopBtn.addEventListener('click', () => {
-  if (state.abortController) {
-    state._abortReason = 'ABORTED';
-    state.abortController.abort();
-    getProvider().interrupt();
-  }
-});
-
-// Retry model
-retryBtn.addEventListener('click', async () => {
-  state.error = null;
-  state.status = 'idle';
-  state.statusText = 'Retrying...';
-  updateUI();
-  resetProvider();
-  if (isFakeMode) {
-    state.status = 'ready';
-    state.statusText = `Fake mode: ${FAKE_MODE}`;
-    updateUI();
-  } else {
-    await loadModel(CONFIG.DEFAULT_MODEL);
-  }
-});
-
-// Clear chat
 clearBtn.addEventListener('click', () => {
-  // Remove all message elements
-  const msgs = chatArea.querySelectorAll('.message, .tool-call-card');
-  msgs.forEach(el => el.remove());
+  chatArea.querySelectorAll('.message').forEach(el => el.remove());
   state.messages = [];
   if (emptyState) emptyState.style.display = '';
   updateUI();
 });
 
-// Theme toggle
-themeBtn.addEventListener('click', () => {
-  state.theme = state.theme === 'dark' ? 'light' : 'dark';
-  document.body.style.background = state.theme === 'dark' ? 'hsl(240 30% 14%)' : '#ffffff';
-  document.body.style.color = state.theme === 'dark' ? 'hsl(240 11% 97%)' : 'hsl(240 30% 14%)';
-  themeBtn.textContent = state.theme === 'dark' ? '☀' : '☾';
-});
+// ═══════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════
 
-// =========================================================================
-// 13. MODEL LOADING
-// =========================================================================
-
-async function loadModel(modelId) {
-  if (isFakeMode) return;
-
-  const provider = getProvider();
-  if (provider.isLoaded() && provider.getLoadedModel() === modelId) {
-    state.status = 'ready';
-    state.statusText = 'Model ready';
-    updateUI();
-    return;
-  }
-
-  try {
-    state.status = 'loading';
-    state.progress = 0;
-    state.statusText = 'Loading model...';
-    updateUI();
-
-    await provider.load(modelId, (progress, text) => {
-      state.progress = progress;
-      state.statusText = text || `Loading... ${(progress * 100).toFixed(0)}%`;
-      updateUI();
-    });
-
-    state.status = 'ready';
-    state.statusText = 'Model ready';
-    updateUI();
-  } catch (err) {
-    state.status = 'error';
-    state.error = err.message || String(err);
-    state.statusText = 'Model load failed';
-    updateUI();
-  }
-}
-
-// =========================================================================
-// 14. INIT
-// =========================================================================
-
-async function init() {
-  // Show mode badge
-  if (isFakeMode) {
-    state.status = 'ready';
-    state.statusText = `Fake mode: ${FAKE_MODE}`;
-  } else {
-    state.statusText = 'Initializing...';
-  }
-  updateUI();
-
-  // Load model (no-op for fake modes)
-  if (!isFakeMode) {
-    await loadModel(CONFIG.DEFAULT_MODEL);
-  }
-
-  updateUI();
-  console.log('[swarm] initialized, mode=' + (FAKE_MODE || 'real'));
-}
-
-init();
+updateUI();
 
 })();
 </script>

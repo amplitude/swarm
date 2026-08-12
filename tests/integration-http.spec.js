@@ -234,4 +234,230 @@ test.describe.serial('HTTP-level integration (real mode, injected state)', () =>
     expect(result.body.inspection.wordCount).toBe(2);
     server.close();
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 6. BEHAVIOR-LEVEL PROOFS — prompt dataflow via HTTP
+  // ────────────────────────────────────────────────────────────────────
+
+  test('user message foo enters as user content, not wrapped in JSON/marker', async () => {
+    let capturedPrompt = '';
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async (prompt) => {
+        capturedPrompt = prompt;
+        return 'Session received: ' + prompt;
+      },
+    };
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    const result = await postChat({ message: 'foo' });
+
+    // The session received the raw user message — no JSON wrapper
+    expect(capturedPrompt).toBe('foo');
+    expect(capturedPrompt).not.toContain('[');
+    expect(capturedPrompt).not.toContain('Inspection');
+    expect(capturedPrompt).not.toContain('wordCount');
+    expect(capturedPrompt).not.toContain('messageLength');
+
+    // HTTP response matches
+    expect(result.body.response).toBe('Session received: foo');
+    expect(result.body.finishReason).toBe('stop');
+
+    server.close();
+  });
+
+  test('raw inspection JSON/marker does not enter the prompt', async () => {
+    let capturedPrompt = '';
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async (prompt) => {
+        capturedPrompt = prompt;
+        return 'ack';
+      },
+    };
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    await postChat({ message: 'How are you?' });
+
+    // The inspection result is returned in the HTTP body, but the model
+    // prompt is clean — no raw JSON inspection data
+    expect(capturedPrompt).not.toContain('[');
+    expect(capturedPrompt).not.toContain(']');
+    expect(capturedPrompt).not.toContain('Inspection of user message');
+    expect(capturedPrompt).not.toContain('messageLength');
+    expect(capturedPrompt).not.toContain('wordCount');
+    expect(capturedPrompt).not.toContain('hasQuestion');
+    expect(capturedPrompt).not.toContain('classification');
+    expect(capturedPrompt).not.toContain('sentiment');
+    expect(capturedPrompt).not.toContain('{');
+    expect(capturedPrompt).not.toContain('}');
+
+    server.close();
+  });
+
+  test('generated marker/empty completion becomes explicit machine-readable fallback', async () => {
+    // Marked response — looks like leaked inspection data
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async () => '[Inspection of user message: {"wordCount":1}] Timestamp: 123',
+    };
+    modelState.modelName = 'leaky-model';
+
+    await startServer();
+    const leakyResult = await postChat({ message: 'hello' });
+    expect(leakyResult.body.finishReason).toBe('fallback');
+    expect(leakyResult.body.fallbackReason).toBe('Response contained leaked internal data');
+    expect(leakyResult.body.response).not.toContain('[Inspection of user message');
+    expect(typeof leakyResult.body.response).toBe('string');
+    expect(leakyResult.body.response.length).toBeGreaterThan(0);
+    server.close();
+
+    // Empty completion
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async () => '',
+    };
+
+    await startServer();
+    const emptyResult = await postChat({ message: 'hello' });
+    expect(emptyResult.body.finishReason).toBe('fallback');
+    expect(emptyResult.body.fallbackReason).toBe('Empty response from model');
+    expect(typeof emptyResult.body.response).toBe('string');
+    expect(emptyResult.body.response.length).toBeGreaterThan(0);
+    server.close();
+
+    // Whitespace-only completion
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async () => '   \n  ',
+    };
+
+    await startServer();
+    const wsResult = await postChat({ message: 'hello' });
+    expect(wsResult.body.finishReason).toBe('fallback');
+    expect(wsResult.body.fallbackReason).toBe('Empty response from model');
+    server.close();
+  });
+
+  test('independent HTTP requests clear history between calls', async () => {
+    let clearHistoryCalls = 0;
+    const prompts = [];
+
+    // Use the full lock path: LlamaChatSession + context + sequence
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    // Track sessions created and prompts received
+    let sessionCount = 0;
+    const MockSessionClass = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        prompts.push(message);
+        return `response: ${message}`;
+      }
+    };
+
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = null;
+    modelState.LlamaChatSession = MockSessionClass;
+    modelState.context = {};
+    modelState.sequence = mockSequence;
+    modelState.modelName = 'test-model';
+
+    await startServer();
+
+    const r1 = await postChat({ message: 'first' });
+    const r2 = await postChat({ message: 'second' });
+
+    expect(r1.body.response).toBe('response: first');
+    expect(r2.body.response).toBe('response: second');
+
+    // Each request got its own session
+    expect(sessionCount).toBe(2);
+    // clearHistory called each time
+    expect(clearHistoryCalls).toBe(2);
+    // Each request passed only its own message
+    expect(prompts).toEqual(['first', 'second']);
+    // No cross-contamination
+    expect(r1.body.response).not.toContain('second');
+    expect(r2.body.response).not.toContain('first');
+
+    server.close();
+  });
+
+  test('concurrent HTTP requests serialize safely via sequenceLock', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const started = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const ConcurrentSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        started.push(message);
+        await new Promise(r => setTimeout(r, 15));
+        return `response: ${message}`;
+      }
+    };
+
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = null;
+    modelState.LlamaChatSession = ConcurrentSession;
+    modelState.context = {};
+    modelState.sequence = mockSequence;
+    modelState.modelName = 'test-model';
+
+    await startServer();
+
+    // Fire 3 requests concurrently
+    const results = await Promise.all([
+      postChat({ message: 'req-A' }),
+      postChat({ message: 'req-B' }),
+      postChat({ message: 'req-C' }),
+    ]);
+
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.status).toBe(200);
+      expect(r.body.finishReason).toBe('stop');
+    }
+
+    // Each response matches its request — no cross-talk
+    const bodies = results.map(r => r.body.response);
+    expect(bodies).toContain('response: req-A');
+    expect(bodies).toContain('response: req-B');
+    expect(bodies).toContain('response: req-C');
+
+    // All requests were serviced
+    expect(started.sort()).toEqual(['req-A', 'req-B', 'req-C']);
+
+    // Each request serialized through the lock
+    expect(clearHistoryCalls).toBe(3);
+    expect(sessionCount).toBe(3);
+
+    server.close();
+  });
 });

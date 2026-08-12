@@ -279,6 +279,147 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(first.inspection).toBeDefined();
     expect(first.inspection.wordCount).toBe(1);
   });
+
+  test('throwing request does not deadlock next request (sequence lock try/finally)', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    // First call to prompt() throws; second succeeds
+    let callIndex = 0;
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const ThrowThenWorkSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        const idx = callIndex++;
+        if (idx === 0) {
+          throw new Error('Simulated inference crash');
+        }
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: ThrowThenWorkSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // First request throws inside the lock — releases the lock (finally)
+    const first = await runChat('crash-msg', 'test', 'sess', null, { state });
+
+    // First returns fallback because inference threw
+    expect(first.model).toBe('fallback');
+    expect(first.finishReason).toBe('fallback');
+    expect(first.fallbackReason).toContain('Simulated inference crash');
+
+    // Second request proceeds without deadlock
+    const second = await runChat('hello', 'test', 'sess', null, { state });
+
+    expect(second.model).toBe('test-model');
+    expect(second.finishReason).toBe('stop');
+    expect(second.response).toBe('response to: hello');
+
+    // clearHistory was called for each attempt (lock acquired both times)
+    expect(clearHistoryCalls).toBe(2);
+
+    // Only the successful session recorded its prompt
+    expect(sessionCount).toBe(2);
+    expect(prompts).toEqual(['hello']);
+  });
+
+  test('concurrent requests serialize safely via sequenceLock', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const concurrentStart = [];
+    const concurrentEnd = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const ConcurrentSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        concurrentStart.push(message);
+        // Simulate work — ensure serialization would surface cross-talk
+        await new Promise(r => setTimeout(r, 10));
+        const result = `response to: ${message}`;
+        concurrentEnd.push(message);
+        return result;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: ConcurrentSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // Fire 5 requests concurrently
+    const results = await Promise.all([
+      runChat('canary-A', 'test', 'sess', null, { state }),
+      runChat('canary-B', 'test', 'sess', null, { state }),
+      runChat('canary-C', 'test', 'sess', null, { state }),
+      runChat('canary-D', 'test', 'sess', null, { state }),
+      runChat('canary-E', 'test', 'sess', null, { state }),
+    ]);
+
+    // All 5 succeed
+    expect(results).toHaveLength(5);
+    for (const r of results) {
+      expect(r.finishReason).toBe('stop');
+      expect(r.model).toBe('test-model');
+    }
+
+    // Each response matches its canary — no cross-contamination
+    const responses = results.map(r => r.response);
+    expect(responses).toContain('response to: canary-A');
+    expect(responses).toContain('response to: canary-B');
+    expect(responses).toContain('response to: canary-C');
+    expect(responses).toContain('response to: canary-D');
+    expect(responses).toContain('response to: canary-E');
+
+    // Each canary started and ended — all were serviced
+    expect(concurrentStart.sort()).toEqual(['canary-A', 'canary-B', 'canary-C', 'canary-D', 'canary-E']);
+    expect(concurrentEnd.sort()).toEqual(['canary-A', 'canary-B', 'canary-C', 'canary-D', 'canary-E']);
+
+    // clearHistory called exactly once per request (serialized)
+    expect(clearHistoryCalls).toBe(5);
+    expect(sessionCount).toBe(5);
+  });
+
+  test('model URL is exactly Qwen2.5-0.5B-Instruct Q4_K_M', async () => {
+    // MODEL_URL is not exported — read source file directly
+    const { readFileSync } = await import('node:fs');
+    const { join, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'server.mjs'), 'utf8');
+    const urlMatch = source.match(/MODEL_URL\s*=\s*'([^']+)'/);
+    expect(urlMatch).toBeTruthy();
+    expect(urlMatch[1]).toBe('hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

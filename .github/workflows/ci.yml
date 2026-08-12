@@ -17,5 +17,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Run Playwright tests
+      - name: Run Playwright tests (fake mode — no model download)
         run: npx playwright test
+        env:
+          SWARM_FAKE: "true"

@@ -1,16 +1,17 @@
 {
   "name": "swarm",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
+    "start:fake": "SWARM_FAKE=true node server.mjs",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@mlc-ai/web-llm": "^0.2.84"
+    "node-llama-cpp": "^3.1.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

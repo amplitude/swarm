@@ -254,9 +254,10 @@ test.describe.serial('HTTP-level integration (real mode, injected state)', () =>
     await startServer();
     const result = await postChat({ message: 'foo' });
 
-    // The session received the raw user message — no JSON wrapper
+    // The session received the raw user message — no JSON wrapper.
+    // Only specific internal markers/serialization are rejected,
+    // not generic brackets or braces (legitimate JSON/code pass through).
     expect(capturedPrompt).toBe('foo');
-    expect(capturedPrompt).not.toContain('[');
     expect(capturedPrompt).not.toContain('Inspection');
     expect(capturedPrompt).not.toContain('wordCount');
     expect(capturedPrompt).not.toContain('messageLength');
@@ -284,17 +285,15 @@ test.describe.serial('HTTP-level integration (real mode, injected state)', () =>
     await postChat({ message: 'How are you?' });
 
     // The inspection result is returned in the HTTP body, but the model
-    // prompt is clean — no raw JSON inspection data
-    expect(capturedPrompt).not.toContain('[');
-    expect(capturedPrompt).not.toContain(']');
+    // prompt is clean — no raw JSON inspection data.
+    // Only specific internal markers/serialization are rejected,
+    // not generic brackets or braces (legitimate JSON/code pass through).
     expect(capturedPrompt).not.toContain('Inspection of user message');
     expect(capturedPrompt).not.toContain('messageLength');
     expect(capturedPrompt).not.toContain('wordCount');
     expect(capturedPrompt).not.toContain('hasQuestion');
     expect(capturedPrompt).not.toContain('classification');
     expect(capturedPrompt).not.toContain('sentiment');
-    expect(capturedPrompt).not.toContain('{');
-    expect(capturedPrompt).not.toContain('}');
 
     server.close();
   });
@@ -395,6 +394,229 @@ test.describe.serial('HTTP-level integration (real mode, injected state)', () =>
     // No cross-contamination
     expect(r1.body.response).not.toContain('second');
     expect(r2.body.response).not.toContain('first');
+
+    server.close();
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 7. POSITIVE HTTP INJECTED-READY TESTS
+  // ────────────────────────────────────────────────────────────────────
+
+  test('normal text passthrough returns finishReason stop with valid content', async () => {
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = {
+      prompt: async (_prompt) => 'Normal text response: Hello there!',
+    };
+    // Clear lock-path fields so state.session takes priority
+    modelState.LlamaChatSession = null;
+    modelState.context = null;
+    modelState.sequence = null;
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    const result = await postChat({ message: 'Hello there!' });
+
+    expect(result.status).toBe(200);
+    expect(result.body.finishReason).toBe('stop');
+    expect(result.body.response).toBe('Normal text response: Hello there!');
+    expect(result.body.model).toBe('test-model');
+    expect(result.body.inspection).toBeDefined();
+    expect(result.body.inspection.wordCount).toBe(2);
+
+    server.close();
+  });
+
+  test('fenced code block in model response passes through with finishReason stop', async () => {
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    const codeResponse = 'Here is your code:\n```js\nconst x = 42;\nconsole.log(x);\n```\nHope that helps!';
+    modelState.session = {
+      prompt: async (_prompt) => codeResponse,
+    };
+    modelState.LlamaChatSession = null;
+    modelState.context = null;
+    modelState.sequence = null;
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    const result = await postChat({ message: 'Write code for me' });
+
+    expect(result.status).toBe(200);
+    expect(result.body.finishReason).toBe('stop');
+    expect(result.body.response).toContain('```js');
+    expect(result.body.response).toContain('const x = 42');
+    expect(result.body.response).toContain('console.log(x);');
+    expect(result.body.response).toContain('```');
+    expect(result.body.model).toBe('test-model');
+    expect(result.body.inspection).toBeDefined();
+
+    server.close();
+  });
+
+  test('JSON in model response passes through with finishReason stop', async () => {
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    const jsonResponse = 'The result is: {"answer":42,"unit":"meaning of life"}. Let me know if you need more.';
+    modelState.session = {
+      prompt: async (_prompt) => jsonResponse,
+    };
+    modelState.LlamaChatSession = null;
+    modelState.context = null;
+    modelState.sequence = null;
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    const result = await postChat({ message: 'Give me JSON answer' });
+
+    expect(result.status).toBe(200);
+    expect(result.body.finishReason).toBe('stop');
+    expect(result.body.response).toContain('{"answer":42');
+    expect(result.body.response).toContain('"unit":"meaning of life"');
+    expect(result.body.model).toBe('test-model');
+
+    server.close();
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 8. STRENGTHENED SYSTEM-PROMPT TESTS
+  // ────────────────────────────────────────────────────────────────────
+
+  test('buildSystemPrompt returns fixed-enum guidance with no raw inspection serialization', async () => {
+    const { buildSystemPrompt } = await import('../server.mjs');
+    const inspection = {
+      messageLength: 18,
+      wordCount: 4,
+      hasQuestion: true,
+      hasExclamation: false,
+      hasCode: false,
+      isOverlong: false,
+      classification: 'medium',
+      sentiment: 'neutral',
+      timestamp: 1234567890,
+    };
+
+    const sp = buildSystemPrompt(inspection);
+
+    // Fixed-enum guidance: always starts with the same identity prefix
+    expect(sp).toContain('You are Swarm');
+    expect(sp).toContain('local-first agent assistant');
+    expect(sp).toContain('Keep your responses concise');
+
+    // No original user text bleeds into system prompt
+    expect(sp).not.toContain('messageLength');
+    expect(sp).not.toContain('wordCount');
+    expect(sp).not.toContain('hasQuestion');
+    expect(sp).not.toContain('classification');
+    expect(sp).not.toContain('sentiment');
+    expect(sp).not.toContain('1234567890');
+    expect(sp).not.toContain('"');
+    expect(sp).not.toContain('{');
+
+    // The message IS a question — confirm natural-language hint
+    expect(sp).toContain('The message is a question');
+
+    // No raw inspection marker
+    expect(sp).not.toContain('Inspection of user message');
+    expect(sp).not.toContain('[Inspection');
+  });
+
+  test('buildSystemPrompt with code generates code hint not raw serialization', async () => {
+    const { buildSystemPrompt } = await import('../server.mjs');
+    const inspection = {
+      messageLength: 30,
+      wordCount: 5,
+      hasQuestion: false,
+      hasExclamation: false,
+      hasCode: true,
+      isOverlong: false,
+      classification: 'medium',
+      sentiment: 'neutral',
+      timestamp: 999,
+    };
+
+    const sp = buildSystemPrompt(inspection);
+
+    // Natural-language hint instead of raw data
+    expect(sp).toContain('The message contains code');
+
+    // No raw serialization
+    expect(sp).not.toContain('hasCode');
+    expect(sp).not.toContain('true');
+    expect(sp).not.toContain('messageLength');
+    expect(sp).not.toContain('"');
+    expect(sp).not.toContain('{');
+  });
+
+  test('buildSystemPrompt with sentiment generates positive/negative hints', async () => {
+    const { buildSystemPrompt } = await import('../server.mjs');
+
+    const pos = buildSystemPrompt({
+      messageLength: 20, wordCount: 3, hasQuestion: false, hasExclamation: true,
+      hasCode: false, isOverlong: false, classification: 'medium',
+      sentiment: 'positive', timestamp: 1,
+    });
+    expect(pos).toContain('positive sentiment');
+    // Natural-language hint uses the word, but raw JSON key:value serialization does not
+    expect(pos).not.toMatch(/sentiment\s*[:=]\s*['"]?positive['"]?/i);
+    expect(pos).not.toContain('messageLength');
+
+    const neg = buildSystemPrompt({
+      messageLength: 20, wordCount: 3, hasQuestion: false, hasExclamation: true,
+      hasCode: false, isOverlong: false, classification: 'medium',
+      sentiment: 'negative', timestamp: 2,
+    });
+    expect(neg).toContain('negative sentiment');
+    expect(neg).not.toMatch(/sentiment\s*[:=]\s*['"]?negative['"]?/i);
+    expect(neg).not.toContain('messageLength');
+  });
+
+  test('inspection in HTTP response JSON body is intentional (separate from system content)', async () => {
+    // Prove: inspection is in the HTTP body but NOT in the system prompt
+    // that the model receives.
+    let capturedSystemPrompt = '';
+
+    // Use LlamaChatSession path so we can inspect the systemPrompt constructor arg
+    const MockSessionClass = class {
+      constructor(opts) {
+        capturedSystemPrompt = opts.systemPrompt;
+      }
+      async prompt(message) {
+        return `response to: ${message}`;
+      }
+    };
+
+    modelState.status = 'ready';
+    modelState.loaded = true;
+    modelState.session = null;
+    modelState.LlamaChatSession = MockSessionClass;
+    modelState.context = {};
+    modelState.sequence = { clearHistory() {} };
+    modelState.modelName = 'test-model';
+
+    await startServer();
+    const result = await postChat({ message: 'How are you?' });
+
+    // 1. System prompt is clean — no raw inspection
+    expect(capturedSystemPrompt).not.toContain('messageLength');
+    expect(capturedSystemPrompt).not.toContain('wordCount');
+    expect(capturedSystemPrompt).not.toContain('hasQuestion');
+    expect(capturedSystemPrompt).not.toContain('classification');
+    expect(capturedSystemPrompt).not.toContain('sentiment');
+    expect(capturedSystemPrompt).not.toContain('{');
+    expect(capturedSystemPrompt).not.toContain('Inspection of user message');
+
+    // 2. System prompt has fixed-enum guidance
+    expect(capturedSystemPrompt).toContain('You are Swarm');
+    expect(capturedSystemPrompt).toContain('local-first agent assistant');
+    expect(capturedSystemPrompt).toContain('The message is a question');
+
+    // 3. Inspection IS in the HTTP response body (intentional)
+    expect(result.body.inspection).toBeDefined();
+    expect(typeof result.body.inspection.messageLength).toBe('number');
+    expect(typeof result.body.inspection.wordCount).toBe('number');
+    expect(typeof result.body.inspection.hasQuestion).toBe('boolean');
+    expect(typeof result.body.inspection.timestamp).toBe('number');
 
     server.close();
   });

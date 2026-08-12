@@ -176,8 +176,8 @@ async function withSequenceLock(fn) {
   const prev = sequenceLock;
   let release;
   sequenceLock = new Promise((resolve) => { release = resolve; });
-  await prev;
   try {
+    await prev;
     return await fn();
   } finally {
     release();
@@ -256,7 +256,7 @@ export async function runChat(userMessage, userId, sessionId, mode, options = {}
       const genOpts = { maxTokens: 160, temperature: 0.2, topP: 0.9, trimWhitespaceSuffix: true };
       const content = await session.prompt(msg, genOpts);
       const cleaned = (content || '').trim();
-      const hasLeaked = /\[Inspection of user message/i.test(cleaned);
+      const hasLeaked = /\[Inspection of user message|['"]?(?:messageLength|wordCount|hasQuestion|hasExclamation|hasCode|isOverlong|classification|sentiment)\s*[:=]/i.test(cleaned);
       if (hasLeaked || !cleaned) {
         return {
           response: fallbackResponse(inspection),
@@ -351,6 +351,18 @@ export function createApp() {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // ── GET /api/status ──
+    if (req.url === '/api/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: modelState.status,
+        model: modelState.modelName || MODEL_NAME,
+        loaded: modelState.loaded,
+        error: modelState.error || null,
+      }));
       return;
     }
 

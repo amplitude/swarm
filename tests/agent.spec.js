@@ -212,6 +212,28 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.response).not.toContain('[Inspection of user message');
   });
 
+  test('defense-in-depth lets legitimate JSON/code/braces through (rejects only specific markers)', async () => {
+    const cleanSession = {
+      prompt: async () => 'Here is JSON: {"key":"value","nested":[1,2,3]}. And code: const x = fn();',
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: cleanSession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    // Legitimate JSON/braces/code pass through — finishReason is 'stop'
+    expect(result.model).not.toBe('fallback');
+    expect(result.finishReason).toBe('stop');
+    expect(result.response).toContain('{"key":"value"');
+    expect(result.response).toContain('[1,2,3]');
+    expect(result.response).toContain('const x = fn()');
+  });
+
   test('defense-in-depth rejects empty model response', async () => {
     const emptySession = {
       prompt: async () => '',
@@ -341,11 +363,12 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(prompts).toEqual(['hello']);
   });
 
-  test('concurrent requests serialize safely via sequenceLock', async () => {
+  test('concurrent requests serialize safely via sequenceLock — in-flight count tracks ordering', async () => {
     let clearHistoryCalls = 0;
     let sessionCount = 0;
-    const concurrentStart = [];
-    const concurrentEnd = [];
+    let maxInFlight = 0;
+    let currentInFlight = 0;
+    const executionOrder = [];
 
     const mockSequence = {
       clearHistory() {
@@ -359,11 +382,13 @@ test.describe('unit: runChat (dependency injection)', () => {
         this.sequence = opts.contextSequence;
       }
       async prompt(message) {
-        concurrentStart.push(message);
-        // Simulate work — ensure serialization would surface cross-talk
+        currentInFlight++;
+        maxInFlight = Math.max(maxInFlight, currentInFlight);
+        executionOrder.push(message);
+        // Simulate real work
         await new Promise(r => setTimeout(r, 10));
         const result = `response to: ${message}`;
-        concurrentEnd.push(message);
+        currentInFlight--;
         return result;
       }
     };
@@ -377,14 +402,16 @@ test.describe('unit: runChat (dependency injection)', () => {
       sequence: mockSequence,
     };
 
-    // Fire 5 requests concurrently
-    const results = await Promise.all([
-      runChat('canary-A', 'test', 'sess', null, { state }),
-      runChat('canary-B', 'test', 'sess', null, { state }),
-      runChat('canary-C', 'test', 'sess', null, { state }),
-      runChat('canary-D', 'test', 'sess', null, { state }),
-      runChat('canary-E', 'test', 'sess', null, { state }),
-    ]);
+    // Fire 5 requests concurrently with rare distinct canaries
+    const requests = [
+      runChat('canary-XANADU', 'test', 'sess', null, { state }),
+      runChat('canary-KALEIDO', 'test', 'sess', null, { state }),
+      runChat('canary-ZEPHYRUS', 'test', 'sess', null, { state }),
+      runChat('canary-QUASARIA', 'test', 'sess', null, { state }),
+      runChat('canary-MOONWALK', 'test', 'sess', null, { state }),
+    ];
+
+    const results = await Promise.all(requests);
 
     // All 5 succeed
     expect(results).toHaveLength(5);
@@ -393,21 +420,76 @@ test.describe('unit: runChat (dependency injection)', () => {
       expect(r.model).toBe('test-model');
     }
 
+    // Max concurrency was exactly 1 (serialized through lock)
+    expect(maxInFlight).toBe(1);
+
     // Each response matches its canary — no cross-contamination
     const responses = results.map(r => r.response);
-    expect(responses).toContain('response to: canary-A');
-    expect(responses).toContain('response to: canary-B');
-    expect(responses).toContain('response to: canary-C');
-    expect(responses).toContain('response to: canary-D');
-    expect(responses).toContain('response to: canary-E');
+    expect(responses).toContain('response to: canary-XANADU');
+    expect(responses).toContain('response to: canary-KALEIDO');
+    expect(responses).toContain('response to: canary-ZEPHYRUS');
+    expect(responses).toContain('response to: canary-QUASARIA');
+    expect(responses).toContain('response to: canary-MOONWALK');
 
-    // Each canary started and ended — all were serviced
-    expect(concurrentStart.sort()).toEqual(['canary-A', 'canary-B', 'canary-C', 'canary-D', 'canary-E']);
-    expect(concurrentEnd.sort()).toEqual(['canary-A', 'canary-B', 'canary-C', 'canary-D', 'canary-E']);
+    // Execution was sequential — all 5 canaries started and ended in order
+    expect(executionOrder).toEqual(['canary-XANADU', 'canary-KALEIDO', 'canary-ZEPHYRUS', 'canary-QUASARIA', 'canary-MOONWALK']);
 
     // clearHistory called exactly once per request (serialized)
     expect(clearHistoryCalls).toBe(5);
     expect(sessionCount).toBe(5);
+  });
+
+  test('session creation throw followed by successful request — lock releases', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    // Constructor throws for first session, succeeding sessions work
+    const FailingConstructorSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+        if (sessionCount === 1) {
+          throw new Error('Session creation failed: OOM');
+        }
+      }
+      async prompt(message) {
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: FailingConstructorSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // First request's session constructor throws before prompt — the
+    // lock must still release for the next request
+    const first = await runChat('first-msg', 'test', 'sess', null, { state });
+    expect(first.finishReason).toBe('fallback');
+    expect(first.fallbackReason).toContain('Session creation failed: OOM');
+
+    // Second request succeeds — proves lock was released
+    const second = await runChat('second-msg', 'test', 'sess', null, { state });
+    expect(second.finishReason).toBe('stop');
+    expect(second.response).toBe('response to: second-msg');
+
+    // Only the successful request recorded its prompt
+    expect(prompts).toEqual(['second-msg']);
+
+    // clearHistory was called for each attempt
+    expect(clearHistoryCalls).toBe(2);
   });
 
   test('model URL is exactly Qwen2.5-0.5B-Instruct Q4_K_M', async () => {

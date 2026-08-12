@@ -97,22 +97,21 @@ npx playwright test tests/agent.spec.js
 
 ### Real-model smoke test (not CI)
 
-To verify the server works with a real model (auto-downloads Qwen2.5-0.5B-Instruct,
-~491 MB on first run, cached in `~/.node-llama-cpp/`):
+The dedicated smoke script runs 15+ checks against a live real-model server
+including isolation, factual knowledge, arithmetic, and concurrent requests.
 
 ```bash
-# Start without SWARM_FAKE (real model mode)
-SWARM_FAKE='' node server.mjs &
-SERVER_PID=$!
-sleep 5  # wait for model download + load on first run, ~2s on subsequent runs
+# Terminal 1: Start the server with a real model (auto-downloads
+# Qwen2.5-0.5B-Instruct, ~491 MB on first run, cached in
+# ~/.node-llama-cpp/models/)
+npm start
 
-curl -s -X POST http://localhost:4173/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"What is the capital of France?","userId":"smoke","sessionId":"smoke"}'
-
-echo ""
-kill $SERVER_PID 2>/dev/null
+# Terminal 2 (once server is ready): Run the smoke test
+node smoke-model.mjs
 ```
+
+On first run, the server prints a model-loading message and takes extra time
+to download the GGUF file (~491 MB). Subsequent starts load from cache in ~2 s.
 
 > **Note**: This smoke test is intentionally **not** run in CI. It requires
 > a ~491 MB model download on first run and GPU/CPU inference hardware.

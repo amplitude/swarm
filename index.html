@@ -459,15 +459,16 @@ class FakeProvider {
         return;
       }
       case 'overlong': {
-        // Generate a response well over 600 chars
+        // Generate a response well over 600 chars, yielding chunks that
+        // cross the 1000-char boundary to test partial-chunk truncation.
         const longText = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(30);
-        for (let i = 0; i < longText.length; i += 5) {
+        for (let i = 0; i < longText.length; i += 7) {
           if (request.signal && request.signal.aborted) {
             yield { finishReason: 'stop' };
             return;
           }
           await sleep(5);
-          yield { content: longText.slice(i, i + 5) };
+          yield { content: longText.slice(i, i + 7) };
         }
         yield { finishReason: 'stop' };
         return;
@@ -984,11 +985,31 @@ async function sendMessage(text) {
     // ── 6. Create adapter and orchestrator ──
     let streamedContent = '';
     let hasStreamed = false;
+    let didCollectCap = false;
 
     const adapter = new LLMChatAdapter(provider, (token) => {
+      // ── Stop once STREAM_COLLECT chars are collected ──
       if (abortController.signal.aborted) return;
-      streamedContent += token;
       hasStreamed = true;
+
+      const remaining = CONFIG.STREAM_COLLECT - streamedContent.length;
+      if (remaining <= 0) {
+        // Already at cap — drop further deltas, interrupt generation
+        if (!didCollectCap) {
+          didCollectCap = true;
+          getProvider().interrupt();
+        }
+        return;
+      }
+
+      // Truncate a chunk that crosses the 1000-char boundary
+      const addContent = token.length <= remaining ? token : token.slice(0, remaining);
+      streamedContent += addContent;
+
+      if (addContent.length < token.length) {
+        didCollectCap = true;
+        getProvider().interrupt();
+      }
 
       // Update placeholder in real-time (stream display)
       const lastMsg = state.messages[state.messages.length - 1];
@@ -1052,12 +1073,21 @@ async function sendMessage(text) {
     // ── 10. Apply response caps ──
     let finalContent = turn.finalResponse || '';
 
-    // Collect stream (cap at STREAM_COLLECT)
+    // Safety net: ensure streamedContent never exceeds STREAM_COLLECT
     if (streamedContent.length > CONFIG.STREAM_COLLECT) {
       streamedContent = streamedContent.slice(0, CONFIG.STREAM_COLLECT);
     }
+    // Safety net: cap the orchestrator's content channel too
+    if (finalContent.length > CONFIG.STREAM_COLLECT) {
+      finalContent = finalContent.slice(0, CONFIG.STREAM_COLLECT);
+      didCollectCap = true;
+    }
 
-    // Use final response or streamed content
+    // Determine what was actually collected (before display cap)
+    const collectedChars = streamedContent.length || finalContent.length || 0;
+    const collectionWasTruncated = didCollectCap || collectedChars >= CONFIG.STREAM_COLLECT;
+
+    // Use final response or streamed content for display
     const displayContent = finalContent || streamedContent || '';
     const cappedContent = displayContent.slice(0, CONFIG.MAX_RESPONSE_CHARS);
 
@@ -1106,6 +1136,8 @@ async function sendMessage(text) {
     emitAgentEvent('ai_response', {
       content: cappedContent || '',
       length: cappedContent.length,
+      collectedCharacters: collectedChars,
+      collectionTruncated: collectionWasTruncated,
       isOverlong: displayContent.length > CONFIG.MAX_RESPONSE_CHARS,
       timestamp: Date.now(),
     });

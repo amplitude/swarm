@@ -269,21 +269,47 @@ test.describe('caps enforcement', () => {
     expect(arEvent.data.isOverlong).toBe(true);
   });
 
-  test('streamed content is collected with 1000 char cap before final', async ({ page }) => {
+  test('streamed content is collected with 1000 char cap — collectedCharacters, collectionTruncated, final 600, event count', async ({ page }) => {
     await openApp(page, 'overlong');
     await typeMessage(page, 'Test collection cap');
     await clickSend(page);
-    await waitForIdle(page);
+    await waitForIdle(page, 15000);
 
-    // Verify the last provider request had STREAM_COLLECT value
-    const lastRequest = await page.evaluate(() => window._lastProviderRequest);
-    if (lastRequest) {
-      // The stream collect cap is an internal CONFIG value, not in request
-      // Instead, verify the ai_response length is at most 600 (final cap)
-      const events = await getAgentEvents(page);
-      const arEvent = events.find(e => e.type === 'ai_response');
-      expect(arEvent.data.length).toBeLessThanOrEqual(600);
-    }
+    // ── 1. Event order and count (exact success contract) ──
+    const events = await getAgentEvents(page);
+    const types = events.map(e => e.type);
+    expect(types).toEqual(['user_message', 'tool_call', 'ai_response']);
+
+    const toolCalls = events.filter(e => e.type === 'tool_call');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].data.tool).toBe('inspect_message');
+
+    const arEvents = events.filter(e => e.type === 'ai_response');
+    expect(arEvents).toHaveLength(1);
+
+    const arEvent = arEvents[0];
+
+    // ── 2. Stream collection cap: exactly 1000 chars collected ──
+    expect(arEvent.data.collectedCharacters).toBe(1000);
+    expect(arEvent.data.collectionTruncated).toBe(true);
+
+    // ── 3. Final display cap: 600 chars ──
+    expect(arEvent.data.length).toBe(600);
+    expect(arEvent.data.content.length).toBe(600);
+    expect(arEvent.data.isOverlong).toBe(true);
+
+    // ── 4. DOM content also capped at 600 ──
+    const assistantMsg = page.locator('[data-testid="message-bubble"][data-role="assistant"]');
+    await expect(assistantMsg).toHaveCount(1);
+    const contentDiv = assistantMsg.locator('.msg-content');
+    const textContent = await contentDiv.textContent();
+    expect(textContent.length).toBe(600);
+
+    // ── 5. After waiting for any late chunks, no extra events appear ──
+    await page.waitForTimeout(2000);
+    const eventsAfter = await getAgentEvents(page);
+    expect(eventsAfter.length).toBe(events.length);
+    expect(eventsAfter.filter(e => e.type === 'ai_response')).toHaveLength(1);
   });
 });
 

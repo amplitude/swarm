@@ -14,9 +14,14 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { extname, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tool } from '@amplitude/ai';
+import { swarmAgent } from './amplitude.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 4173;
+const ANALYTICS_ENABLED = Boolean(process.env.AMPLITUDE_AI_API_KEY);
+const LOCAL_PROVIDER = 'node-llama-cpp';
+const LOCAL_MODEL = 'tinyllama-1.1b-chat-v1.0';
 
 // ═══════════════════════════════════════════════════════════════════════
 // MODEL — lazy-init: downloaded once, cached forever
@@ -106,6 +111,31 @@ export function inspectMessage(message) {
   };
 }
 
+/** Tracked tool wrapper — emits [Agent] Tool Call inside an active session. */
+const inspectMessageTool = tool(inspectMessage, { name: 'inspect_message' });
+
+function estimateTokens(text) {
+  return Math.max(1, Math.ceil(String(text || '').length / 4));
+}
+
+function trackAiResponse(s, content, model, latencyMs, opts = {}) {
+  if (!s) return;
+  const text = content && String(content).length > 0 ? String(content) : '[No response]';
+  const inputTokens = opts.inputTokens ?? estimateTokens(opts.userMessage || '');
+  const outputTokens = opts.outputTokens ?? estimateTokens(text);
+  s.trackAiMessage(text, model, LOCAL_PROVIDER, Math.max(1, latencyMs), {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    // Local CPU/GPU inference — no cloud spend
+    totalCostUsd: 0,
+    finishReason: opts.finishReason ?? null,
+    isError: opts.isError ?? false,
+    errorMessage: opts.errorMessage ?? null,
+    errorType: opts.errorType ?? null,
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // FALLBACK RESPONSE (deterministic, no model needed)
 // ═══════════════════════════════════════════════════════════════════════
@@ -155,99 +185,163 @@ function fakeResponse(mode) {
 // ═══════════════════════════════════════════════════════════════════════
 
 export async function runChat(userMessage, userId, sessionId, mode, options = {}) {
-  // 1. Inspect message — always runs first, deterministic, no side effects
-  const inspection = inspectMessage(userMessage);
+  const execute = async (s) => {
+    const turnStart = Date.now();
 
-  // Resolve state from injection or global modelState
-  const state = options.state || modelState;
-  const session = options.session || state.session;
+    if (s) {
+      s.trackUserMessage(userMessage);
+    }
 
-  // 2. Fake env mode (SWARM_FAKE=true) — mode is ONLY honored when env is fake.
-  //    Clients cannot force fake behavior on a real server.
-  const fakeModes = ['success', 'empty', 'error', 'overlong', 'timeout'];
-  if (state.status === 'fake' && mode && fakeModes.includes(mode)) {
-    try {
-      const result = fakeResponse(mode);
+    // 1. Inspect message — always runs first, deterministic
+    const inspection = s
+      ? await inspectMessageTool(userMessage)
+      : inspectMessage(userMessage);
+
+    // Resolve state from injection or global modelState
+    const state = options.state || modelState;
+    const session = options.session || state.session;
+
+    // 2. Fake env mode (SWARM_FAKE=true) — mode is ONLY honored when env is fake.
+    const fakeModes = ['success', 'empty', 'error', 'overlong', 'timeout'];
+    if (state.status === 'fake' && mode && fakeModes.includes(mode)) {
+      try {
+        const result = fakeResponse(mode);
+        const response = result.content || '';
+        trackAiResponse(s, response, 'fake', Date.now() - turnStart, {
+          userMessage,
+          finishReason: result.finishReason,
+        });
+        return {
+          response,
+          finishReason: result.finishReason,
+          inspection,
+          model: 'fake',
+          mode,
+        };
+      } catch (err) {
+        const response = fallbackResponse(inspection);
+        trackAiResponse(s, response, 'fake', Date.now() - turnStart, {
+          userMessage,
+          finishReason: 'fallback',
+          isError: true,
+          errorMessage: err.message,
+          errorType: err.name || 'Error',
+        });
+        return {
+          response,
+          finishReason: 'fallback',
+          inspection,
+          model: 'fake',
+          mode,
+          fallbackReason: err.message,
+          fallbackLabel: '\u26A1 Fake error \u2014 deterministic fallback',
+        };
+      }
+    }
+
+    // 3. Fake env without specific mode
+    if (state.status === 'fake') {
+      const response =
+        `[Fake mode] Message inspected: ${inspection.classification}, ${inspection.wordCount} words. Enable real mode by removing SWARM_FAKE.`;
+      trackAiResponse(s, response, 'fake', Date.now() - turnStart, {
+        userMessage,
+        finishReason: 'stop',
+      });
       return {
-        response: result.content || '',
-        finishReason: result.finishReason,
+        response,
+        finishReason: 'stop',
         inspection,
         model: 'fake',
-        mode,
-      };
-    } catch (err) {
-      return {
-        response: fallbackResponse(inspection),
-        finishReason: 'fallback',
-        inspection,
-        model: 'fake',
-        mode,
-        fallbackReason: err.message,
-        fallbackLabel: '\u26A1 Fake error \u2014 deterministic fallback',
+        mode: 'env',
       };
     }
+
+    // 4. Model failed to load — fallback state
+    if (state.status === 'fallback' || !state.loaded) {
+      const response = fallbackResponse(inspection);
+      trackAiResponse(s, response, 'fallback', Date.now() - turnStart, {
+        userMessage,
+        finishReason: 'fallback',
+        isError: true,
+        errorMessage: state.error || 'Model not loaded',
+        errorType: 'ModelUnavailable',
+      });
+      return {
+        response,
+        finishReason: 'fallback',
+        inspection,
+        model: 'fallback',
+        fallbackReason: state.error || 'Model not loaded',
+        fallbackLabel: FALLBACK_LABEL,
+      };
+    }
+
+    // 5. Model is ready — generate response
+    if (!session) {
+      const response = fallbackResponse(inspection);
+      trackAiResponse(s, response, 'fallback', Date.now() - turnStart, {
+        userMessage,
+        finishReason: 'fallback',
+        isError: true,
+        errorMessage: 'No session available',
+        errorType: 'ModelUnavailable',
+      });
+      return {
+        response,
+        finishReason: 'fallback',
+        inspection,
+        model: 'fallback',
+        fallbackReason: 'No session available',
+        fallbackLabel: FALLBACK_LABEL,
+      };
+    }
+
+    try {
+      const inspectionContext =
+        `[Inspection of user message: ${JSON.stringify(inspection)}]`;
+      const fullPrompt = `${inspectionContext}\n\nUser: ${userMessage}`;
+      const inferenceStart = Date.now();
+      const content = await session.prompt(fullPrompt);
+      const modelName = options.modelName || state.modelName || LOCAL_MODEL;
+      trackAiResponse(s, content || '', modelName, Date.now() - inferenceStart, {
+        userMessage: fullPrompt,
+        finishReason: 'stop',
+      });
+      return {
+        response: content || '',
+        finishReason: 'stop',
+        inspection,
+        model: modelName,
+      };
+    } catch (err) {
+      console.error('[swarm] Inference error:', err.message);
+      const response = fallbackResponse(inspection);
+      trackAiResponse(s, response, 'fallback', Date.now() - turnStart, {
+        userMessage,
+        finishReason: 'fallback',
+        isError: true,
+        errorMessage: err.message,
+        errorType: err.name || 'InferenceError',
+      });
+      return {
+        response,
+        finishReason: 'fallback',
+        inspection,
+        model: 'fallback',
+        fallbackReason: err.message,
+        fallbackLabel: '\u26A1 Inference error \u2014 deterministic fallback',
+      };
+    }
+  };
+
+  // Skip Amplitude when no API key (unit/CI) or when tests opt out
+  if (!ANALYTICS_ENABLED || options.skipAnalytics) {
+    return execute(null);
   }
 
-  // 3. Fake env without specific mode
-  if (state.status === 'fake') {
-    return {
-      response: `[Fake mode] Message inspected: ${inspection.classification}, ${inspection.wordCount} words. Enable real mode by removing SWARM_FAKE.`,
-      finishReason: 'stop',
-      inspection,
-      model: 'fake',
-      mode: 'env',
-    };
-  }
-
-  // 4. Model failed to load — fallback state
-  if (state.status === 'fallback' || !state.loaded) {
-    return {
-      response: fallbackResponse(inspection),
-      finishReason: 'fallback',
-      inspection,
-      model: 'fallback',
-      fallbackReason: state.error || 'Model not loaded',
-      fallbackLabel: FALLBACK_LABEL,
-    };
-  }
-
-  // 5. Model is ready — generate response
-  if (!session) {
-    return {
-      response: fallbackResponse(inspection),
-      finishReason: 'fallback',
-      inspection,
-      model: 'fallback',
-      fallbackReason: 'No session available',
-      fallbackLabel: FALLBACK_LABEL,
-    };
-  }
-
-  try {
-    // The model always receives inspection context + original user message
-    const inspectionContext =
-      `[Inspection of user message: ${JSON.stringify(inspection)}]`;
-    const fullPrompt = `${inspectionContext}\n\nUser: ${userMessage}`;
-
-    const content = await session.prompt(fullPrompt);
-
-    return {
-      response: content || '',
-      finishReason: 'stop',
-      inspection,
-      model: options.modelName || state.modelName || 'tinyllama-1.1b',
-    };
-  } catch (err) {
-    console.error('[swarm] Inference error:', err.message);
-    return {
-      response: fallbackResponse(inspection),
-      finishReason: 'fallback',
-      inspection,
-      model: 'fallback',
-      fallbackReason: err.message,
-      fallbackLabel: '\u26A1 Inference error \u2014 deterministic fallback',
-    };
-  }
+  return swarmAgent
+    .session({ userId, sessionId, autoFlush: true })
+    .run(execute);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -296,10 +390,13 @@ export function createApp() {
         try {
           const parsed = JSON.parse(body);
           const message = (parsed.message || '').trim();
-          const userId = parsed.userId !== undefined && parsed.userId !== null
-            ? String(parsed.userId) : 'anonymous';
-          const sessionId = parsed.sessionId !== undefined && parsed.sessionId !== null
-            ? String(parsed.sessionId) : 'default';
+          // Amplitude rejects user/session ids shorter than 5 characters
+          const normalizeId = (value, fallback) => {
+            const raw = value !== undefined && value !== null ? String(value) : fallback;
+            return raw.length >= 5 ? raw : `${raw}-${fallback}`;
+          };
+          const userId = normalizeId(parsed.userId, 'anonymous');
+          const sessionId = normalizeId(parsed.sessionId, 'default');
 
           if (!message) {
             res.writeHead(400, { 'Content-Type': 'application/json' });

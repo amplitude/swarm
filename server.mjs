@@ -269,7 +269,7 @@ const MIME = {
 // HTTP SERVER
 // ═══════════════════════════════════════════════════════════════════════
 
-function createApp() {
+export function createApp() {
   return createServer(async (req, res) => {
     // ── CORS (for local dev) ──
     res.setHeader('Access-Control-Allow-Origin', '*');

@@ -92,9 +92,33 @@ npx playwright test --headed
 npx playwright test tests/agent.spec.js
 ```
 
+### Real-model smoke test (not CI)
+
+To verify the server works with a real model (auto-downloads TinyLlama-1.1B,
+~592 MB on first run, cached in `~/.node-llama-cpp/`):
+
+```bash
+# Start without SWARM_FAKE (real model mode)
+SWARM_FAKE='' node server.mjs &
+SERVER_PID=$!
+sleep 5  # wait for model download + load on first run, ~2s on subsequent runs
+
+curl -s -X POST http://localhost:4173/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"What is the capital of France?","userId":"smoke","sessionId":"smoke"}'
+
+echo ""
+kill $SERVER_PID 2>/dev/null
+```
+
+> **Note**: This smoke test is intentionally **not** run in CI. It requires
+> a ~592 MB model download on first run and GPU/CPU inference hardware.
+> CI uses `SWARM_FAKE=true` exclusively.
+
 ### Test coverage
 
-Two test domains covering all fake modes, API contracts, and UI rendering:
+Three test domains covering all fake modes, API contracts, UI rendering,
+and HTTP-level integration:
 
 **API tests** (via `request` fixture):
 - Success mode returns expected response structure (response, finishReason, model, inspection)
@@ -112,6 +136,14 @@ Two test domains covering all fake modes, API contracts, and UI rendering:
 - Mode badge visible for fake modes
 - Chat area centered with symmetric padding
 - Messages respect 85% max-width constraint
+
+**HTTP-level integration tests** (real mode, injected state):
+- Client-supplied fake mode cannot force fake behavior on a real server
+- `loading` state returns HTTP 200 with `finishReason: "fallback"`, `fallbackLabel`, and `inspect_message`
+- `fallback` state returns HTTP 200 with useful body and error details
+- Inference failure returns HTTP 200 deterministic fallback
+- `inspect_message` is present on every response path (loading, fallback, inference crash)
+- Response body is always a useful non-empty string with deterministic content
 
 ---
 

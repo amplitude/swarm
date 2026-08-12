@@ -1,23 +1,20 @@
 import { defineConfig, devices } from '@playwright/test';
-import path from 'path';
 
 export default defineConfig({
-  testDir: './tests/e2e',
-  timeout: 60_000,
+  testDir: './tests',
+  timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  retries: 1,
+  retries: 0,
   workers: 1,
   reporter: [
     ['list'],
-    ['json', { outputFile: 'test-output/e2e-results.json' }],
-    ['html', { outputFolder: 'test-output/e2e-report' }],
+    ['json', { outputFile: 'test-output/results.json' }],
   ],
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
     actionTimeout: 10_000,
   },
   projects: [
@@ -27,9 +24,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/preview-e2e.mjs',
+    command: 'node server.mjs',
     url: 'http://localhost:4173',
     reuseExistingServer: true,
-    timeout: 30_000,
+    timeout: 10_000,
   },
 });

@@ -1,9 +1,8 @@
 node_modules/
-dist/
 .env
 .env.local
 *.log
 .DS_Store
-.vite/
 test-output/
 test-results/
+playwright-report/

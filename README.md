@@ -1,206 +1,190 @@
-# Swarm — Coherent Local-First Chat Template
+# Swarm — Single-File Local-First Agent
 
-**A clean, familiar chat app template for local-first agent applications.**  
-No paid inference API, no cloud backend, no API keys, no local services — just your browser.  
-The default model (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) is downloaded and cached by your browser automatically via WebGPU.
+**Everything in one HTML file.** Production UI, CSS, event emitter, tool calling,
+orchestration, WebLLM integration, fake query modes, caps, timeout, abort handling,
+and fallback — all in `index.html`. No build step, no framework, no API keys.
 
----
-
-## Why this approach?
-
-| Concern | Swarm (WebLLM) | Cloud API |
-|---------|----------------|-----------|
-| Inference cost | $0 (your GPU + browser) | Per-token billing |
-| Setup | Zero — opens and runs | API key + account |
-| API keys | None needed | Requires account + key |
-| Privacy | Everything in your browser | Data sent to provider |
-| Offline | Works fully offline | Requires internet |
-| Model quality | **Intentionally low** (135M params) | High (GPT-4, Claude) |
-| First-run delay | One-time ~180 MB download | None |
-
-**Zero-setup, honestly documented quality.** The default model (`SmolLM2-135M-Instruct-q0f16-MLC`) is the *smallest* available chat/instruct model in `@mlc-ai/web-llm` v0.2.82 at 135M parameters in full float16 precision. It is intentionally low quality — suitable for prototyping, layout testing, and simple conversations. It will struggle with complex reasoning, multi-step tasks, and consistent tool calling.
-
-For better quality, select larger models in Settings (e.g., `SmolLM2-360M-Instruct-q4f16_1-MLC` at ~376 MB).
+The default model (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) is downloaded and
+cached by your browser automatically via WebGPU and `@mlc-ai/web-llm` v0.2.82.
 
 ---
 
 ## Quickstart
 
 ```bash
-pnpm install
-pnpm dev
+# Install dependencies (Playwright for testing)
+npm install
+
+# Start the static server
+npm start
 ```
 
-Open **http://localhost:5173/** in Chrome 113+ (or any WebGPU-enabled browser).  
-No Ollama, no API keys, no configuration, no demo mode.
+Open **http://localhost:4173/** in Chrome 113+ (or any WebGPU-enabled browser).
 
 ---
 
-## What's included
+## How it works
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | React 18 + TypeScript |
-| Build | Vite 6 |
-| Styling | Tailwind CSS 4 |
-| LLM | WebLLM / WebGPU (`SmolLM2-135M-Instruct-q0f16-MLC`, ~359 MB) |
-| State | Zustand + Dexie.js/IndexedDB |
-| Code sandbox | QuickJS WASM |
-| Diagrams | Mermaid.js |
-| Offline PWA | Service Worker via Vite PWA plugin |
+| Concern | Swarm (single-file) |
+|---------|---------------------|
+| Architecture | 1 file: `index.html` (~41 KB) |
+| LLM | WebLLM via `@mlc-ai/web-llm` 0.2.82 from CDN |
+| Model | `SmolLM2-135M-Instruct-q0f16-MLC` (~180 MB download, ~359 MB VRAM) |
+| Tool | `inspect_message` — always called before every response |
+| Events | `CustomEvent('agent-event')` + `window.agentEvents[]` |
+| Input cap | 2000 characters |
+| Response cap | 600 characters display |
+| Timeout | 30 seconds per turn |
+| Cost | $0 (your GPU + browser) |
+| Setup | Zero — opens and runs |
+| API keys | None needed |
+| Privacy | Everything in your browser |
+| Offline | Works fully offline after first load |
 
-**Key files to customize:**
+### Orchestration per turn
 
-| File / Directory | What it controls |
-|---|---|
-| `src/app/App.tsx` | Top-level app composition |
-| `src/components/layout/` | Three-panel layout (sidebar, chat, inspector) |
-| `src/components/chat/` | Message list, bubbles, composer |
-| `src/components/right-panel/` | Agent inspector + task management |
-| `src/components/settings/` | Model config, agent prompts, data export |
-| `src/agents/` | Agent definitions, system prompts, handoff logic |
-| `src/llm/` | WebLLM provider, model constants, capabilities |
-| `src/tools/` | Tool definitions each agent can use |
-| `src/store/` | Zustand state slices (conversations, sessions, tasks, agents) |
-| `src/db/` | IndexedDB persistence schema |
-| `src/types/` | TypeScript type definitions |
+Every accepted user turn follows the same app-orchestrated flow:
 
-### Layout
+1. **`user_message`** event fires when the user sends a message
+2. **`inspect_message` tool** is called automatically (not by the LLM)
+3. Tool result + user message → LLM for response generation
+4. **`ai_response`** event fires with the model's response
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                Model Status Bar                       │
-├──────────┬───────────────────────────┬───────────────┤
-│          │                           │               │
-│ Sidebar  │      Chat / Messages      │  Inspector    │
-│ (agents, │                           │  (collapsed)  │
-│ threads) │      Composer (bottom)    │  - Agent info │
-│          │                           │  - Tasks      │
-│          │                           │               │
-├──────────┴───────────────────────────┴───────────────┤
-│                    Status Bar                         │
-└──────────────────────────────────────────────────────┘
+User sends message ──→ user_message event
+                    ──→ inspect_message() tool executes (deterministic)
+                    ──→ LLM generates response (WebLLM or fake)
+                    ──→ ai_response event
 ```
 
-- **Sidebar** (collapsible, ~240px): Agent list with keyboard shortcuts (Cmd+1–5), conversation threads with create/rename/delete.
-- **Chat** (center, fluid): Conversation messages with streaming, handoff approval widgets, and a clean composer with stop/retry.
-- **Inspector** (collapsible right panel, default closed): Active agent status, quick agent handoff, manual task management.
-- **Model Status** (top bar): Non-blocking download progress, error states, and WebGPU availability messaging. Never obscures the app.
+### Fake query modes
 
----
+For testing without WebGPU, append `?mode=<mode>` to the URL. These modes
+use the same orchestration path but bypass WebGPU/model import entirely:
 
-## Architecture principles
+| Mode | URL | Behavior |
+|------|-----|----------|
+| success | `?mode=success` | Returns a fake successful response |
+| empty | `?mode=empty` | Returns no content (tests fallback) |
+| overlong | `?mode=overlong` | Returns content >600 chars (tests cap) |
+| error | `?mode=error` | Simulates an error during generation |
+| timeout | `?mode=timeout` | Hangs until the 30s timeout triggers |
 
-### No fake behavior
-- No DemoProvider or canned assistant responses
-- No "continue without model" path
-- If WebGPU is unavailable, the app shows a clear message and the send button is disabled with an explanation
-- Test adapters exist only in tests and are tree-shaken from production builds
+All fake modes produce zero external API requests and require no WebGPU.
 
-### Real browser inference
-- Only WebLLM provider in production
-- Auto-downloads and caches `SmolLM2-135M-Instruct-q0f16-MLC` on first run
-- No Ollama setup gate or production Ollama requests
+### Download vs local inference
 
-### Sessions and threads
-- First install has one empty session and one empty thread
-- Threads are titled from the first user message
-- Drafts persist in sessionStorage
-- Full CRUD with delete confirmation
+The `@mlc-ai/web-llm` library is loaded from CDN on first page load (~3 MB JS).
+The model (`SmolLM2-135M-Instruct-q0f16-MLC`) is then downloaded and cached by
+your browser (~180 MB). All inference runs locally on your GPU via WebGPU.
 
-### Tasks
-- Manual create/edit/assign/complete/delete
-- Associated with threads
-- Never imply model execution
+**Why download?** WebLLM packages model weights as downloadable assets that are
+cached by the browser's Cache API. This avoids bundling hundreds of MB into the
+repo while still enabling fully offline inference after the first download.
 
-### Agent handoffs
-- Agents propose handoffs, user approves/rejects/redirects
-- Manual handoff persists a timeline event and switches the active agent
-- Never generates fake agent chatter
-
----
-
-## Model configuration
-
-Currently supported model: **WebLLM** (only production provider).
-
-| Model | Params | VRAM | Download | Quality |
-|-------|--------|------|----------|---------|
-| `SmolLM2-135M-Instruct-q0f16-MLC` (default) | 135M | ~359 MB | ~180 MB | Intentionally low |
-| `SmolLM2-360M-Instruct-q4f16_1-MLC` | 360M | ~376 MB | ~200 MB | Low (better per VRAM) |
-| `Qwen3-4B-q4f16_1-MLC` | 4B | ~3 GB | ~3 GB | Medium (expert, manual) |
-| `Qwen3-8B-q4f16_1-MLC` | 8B | ~5 GB | ~5 GB | Good (expert, manual) |
-
-Select larger models in Settings → Model.
-
----
-
-## Theming — edit one file, restyle the entire app
-
-All visual values (colors, radii, shadows, spacing, layout) live in a single file:
-
-    src/styles/theme.css
-
-**HSL channel syntax** — colors store `H S% L%` so Tailwind opacity modifiers work:
-
-    --brand-500: 229 91% 65%;  /*  hsl(var(--brand-500) / <alpha-value>)  */
-    bg-brand-500/50            /*  →  hsla(229, 91%, 65%, 0.5)            */
-
-**Common variables to customize:**
-
-| Variable | Default | Controls |
-|----------|---------|----------|
-| `--brand-500` | `229 91% 65%` | Primary interactive color |
-| `--canvas` | `240 30% 14%` | App background |
-| `--surface` | `240 21% 17%` | Card/panel background |
-| `--text-primary` | `240 11% 97%` | Primary text |
-| `--border-default` | `240 17% 29%` | Borders |
-| `--radius-xl` | `0.75rem` | Message bubble rounding |
-| `--control-height` | `1.75rem` | Button/input height |
-| `--sidebar-width` | `15rem` | Sidebar width |
-| `--content-max-width` | `48rem` | Chat content max width |
-
-**Dark overrides** in `.dark {}` in the same file. See [docs/theming.md](docs/theming.md) for full guide.
-
----
-
-## Configuration
-
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `VITE_LLM_MODEL` | `SmolLM2-135M-Instruct-q0f16-MLC` | Model ID override |
-
-Runtime settings (localStorage):
-- `swarm-model-id` — model identifier override
-- `swarm-last-model` — last loaded model (auto-restored)
+**Why not an inference API?** No data leaves your machine. No API keys, no
+per-token billing, no rate limits, no vendor lock-in.
 
 ---
 
 ## Testing
 
 ```bash
-# Full test suite (vitest, jsdom)
-pnpm test:run
+# Run all tests (requires server to be running or uses webServer in playwright config)
+npx playwright test
 
-# Production build
-pnpm build
+# Run with visible browser
+npx playwright test --headed
 
-# Type check
-npx tsc --noEmit
+# Run a single test file
+npx playwright test tests/agent.spec.js
 ```
 
 ### Test coverage
-- **17 active test files** covering: model registry invariants, provider config, response parsing, state transitions, session CRUD, task CRUD, conversation title, chat flows, store behavior, UI rendering.
-- **E2E tests** (Playwright): run with `npx playwright test` after building.
-- **Test adapter**: available under `VITE_TEST_MODE=true` build flag for deterministic E2E responses. Tree-shaken from production builds.
+
+A single test file (`tests/agent.spec.js`) covers:
+
+| # | Test | What it verifies |
+|---|------|-----------------|
+| 1 | Success order | `user_message` → `inspect_message` → `ai_response` in sequence |
+| 2 | Deterministic tool | `inspect_message` returns expected structure every time |
+| 3 | Event hook | `CustomEvent('agent-event')` fires; `window.agentEvents` populated |
+| 4 | Input cap | 2000-char textarea `maxlength` enforced |
+| 5 | Empty fallback | Empty model response triggers `diagnostic_error` + fallback |
+| 6 | Error fallback | Error mode produces `diagnostic_error` event |
+| 7 | Overlong cap | Response >600 chars is truncated |
+| 8 | Timeout | 30s timeout triggers `generation_stopped` event |
+| 9 | Duplicate suppression | Second send blocked while generating |
+| 10 | No external requests | All 5 fake modes make zero API calls |
 
 ---
 
-## Deployment
+## Files
 
-Built output in `dist/` — serve with any static file server.  
-The PWA service worker precaches 73 entries (~9.4 MB) for offline use.  
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+```
+├── index.html            ← Everything: UI, CSS, JS, WebLLM, orchestration
+├── server.mjs            ← Minimal Node.js static file server
+├── package.json          ← Playwright + npm scripts
+├── playwright.config.js  ← Playwright test configuration
+├── tests/
+│   └── agent.spec.js     ← Single comprehensive test file
+├── .github/              ← CI/CD workflows (preserved)
+└── LICENSE               ← MIT license
+```
+
+---
+
+## Architecture
+
+### Event system
+
+Two ways to observe events:
+
+```javascript
+// 1. CustomEvent listener
+document.addEventListener('agent-event', (e) => {
+  console.log(e.detail.type, e.detail.data);
+});
+
+// 2. window.agentEvents array (appended on every dispatch)
+console.log(window.agentEvents);
+```
+
+Event types: `user_message`, `tool_call`, `ai_response`, `diagnostic_error`, `generation_stopped`
+
+### data-testid selectors
+
+All interactive elements carry stable `data-testid` attributes:
+
+| Selector | Element |
+|----------|---------|
+| `[data-testid="status-bar"]` | Top status bar |
+| `[data-testid="status-dot"]` | Status indicator dot |
+| `[data-testid="status-text"]` | Status text |
+| `[data-testid="composer-input"]` | Message input textarea |
+| `[data-testid="send-btn"]` | Send button |
+| `[data-testid="stop-btn"]` | Stop generation button |
+| `[data-testid="char-count"]` | Character count display |
+| `[data-testid="message-bubble"]` | Individual message bubble |
+| `[data-testid="tool-call-card"]` | Tool call result card |
+| `[data-testid="error-banner"]` | Error notification banner |
+| `[data-testid="clear-chat-btn"]` | Clear conversation button |
+| `[data-testid="theme-toggle-btn"]` | Theme toggle button |
+
+### Configuration
+
+All limits are defined as `CONFIG` constants at the top of the script in `index.html`:
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_INPUT_CHARS` | 2000 | Input textarea character limit |
+| `MAX_TOKENS` | 128 | `max_tokens` sent to the LLM |
+| `STREAM_COLLECT` | 1000 | Chars collected before emitting final response |
+| `MAX_RESPONSE_CHARS` | 600 | Display cap for response text |
+| `TIMEOUT_MS` | 30000 | Per-turn timeout in milliseconds |
+| `DEFAULT_MODEL` | `SmolLM2-135M-Instruct-q0f16-MLC` | Model loaded on startup |
+
+---
 
 ## License
 

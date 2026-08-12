@@ -4,7 +4,7 @@
 chat UI. All intelligence — `inspect_message`, orchestration, LLM inference —
 lives in the Node.js server. No build step, no framework, no API keys.
 
-The server auto-downloads a small GGUF model (TinyLlama-1.1B, ~592 MB) on first
+The server auto-downloads a small GGUF model (Qwen2.5-0.5B-Instruct, ~491 MB) on first
 run and caches it in `~/.node-llama-cpp/models/`. All inference runs locally on
 your CPU/GPU via [node-llama-cpp](https://github.com/withcatai/node-llama-cpp).
 
@@ -12,11 +12,13 @@ your CPU/GPU via [node-llama-cpp](https://github.com/withcatai/node-llama-cpp).
 
 ## Quickstart
 
+Requires Node.js 20 or newer.
+
 ```bash
 # Install dependencies (node-llama-cpp + Playwright for testing)
 npm install
 
-# Start the server (auto-downloads TinyLlama-1.1B on first run)
+# Start the server (auto-downloads Qwen2.5-0.5B-Instruct on first run)
 npm start
 
 # Or run in fake mode (no model, no download, no GPU needed)
@@ -34,7 +36,7 @@ Open **http://localhost:4173/** in any browser.
 | Frontend | `index.html` — dumb chat UI, sends fetch POST to `/api/chat` |
 | Backend | `server.mjs` — static server + `POST /api/chat` endpoint |
 | LLM | `node-llama-cpp` — native Node.js bindings to llama.cpp |
-| Model | TinyLlama-1.1B-Chat-v1.0 (Q3_K_L, ~592 MB, auto-downloaded) |
+| Model | Qwen2.5-0.5B-Instruct (Q4_K_M, ~491 MB, auto-downloaded) |
 | Tool | `inspect_message` — deterministic, always runs before response |
 | Fallback | If model load fails → useful static response (no crash) |
 | Fake mode | `SWARM_FAKE=true` — zero imports, zero downloads, zero inference |
@@ -49,7 +51,8 @@ Every chat request follows the same flow:
 ```
 Client sends POST /api/chat { message, userId, sessionId }
   ──→ server.inspectMessage(message)    # deterministic tool
-  ──→ server.llamaSession.prompt(...)   # local LLM inference
+  ──→ server creates a fresh chat context # no cross-request history
+  ──→ session.prompt(message)            # local LLM inference
   ──→ { response, inspection, model }   # JSON response
 ```
 
@@ -94,25 +97,24 @@ npx playwright test tests/agent.spec.js
 
 ### Real-model smoke test (not CI)
 
-To verify the server works with a real model (auto-downloads TinyLlama-1.1B,
-~592 MB on first run, cached in `~/.node-llama-cpp/`):
+The dedicated smoke script runs 15+ checks against a live real-model server
+including isolation, factual knowledge, arithmetic, and concurrent requests.
 
 ```bash
-# Start without SWARM_FAKE (real model mode)
-SWARM_FAKE='' node server.mjs &
-SERVER_PID=$!
-sleep 5  # wait for model download + load on first run, ~2s on subsequent runs
+# Terminal 1: Start the server with a real model (auto-downloads
+# Qwen2.5-0.5B-Instruct, ~491 MB on first run, cached in
+# ~/.node-llama-cpp/models/)
+npm start
 
-curl -s -X POST http://localhost:4173/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"What is the capital of France?","userId":"smoke","sessionId":"smoke"}'
-
-echo ""
-kill $SERVER_PID 2>/dev/null
+# Terminal 2 (once server is ready): Run the smoke test
+node smoke-model.mjs
 ```
 
+On first run, the server prints a model-loading message and takes extra time
+to download the GGUF file (~491 MB). Subsequent starts load from cache in ~2 s.
+
 > **Note**: This smoke test is intentionally **not** run in CI. It requires
-> a ~592 MB model download on first run and GPU/CPU inference hardware.
+> a ~491 MB model download on first run and GPU/CPU inference hardware.
 > CI uses `SWARM_FAKE=true` exclusively.
 
 ### Test coverage

@@ -11,7 +11,7 @@
  *
  * Key contract for POST /api/chat:
  *   { response, finishReason, inspection, model }
- *   - model: "fake" | "fallback" | "tinyllama-1.1b"
+ *   - model: "fake" | "fallback" | "qwen2.5-1.5b-instruct"
  *   - finishReason: "stop" | "fallback"
  *   - inspection always present with messageLength, wordCount, etc.
  */
@@ -86,6 +86,7 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.sentiment).toBe('positive');
     expect(result.classification).toBe('medium');
     expect(typeof result.timestamp).toBe('number');
+    expect(inspectMessage('Please draft a feedback letter.').hasCode).toBe(false);
   });
 
   test('clients cannot force fake behavior in real mode — mode is ignored', async () => {
@@ -103,11 +104,13 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.response).toBe('Real model response');
   });
 
-  test('exact order and dataflow: inspect_message runs, then model receives inspection context + original message', async () => {
+  test('inspect_message runs first; user message passed cleanly to model (no raw JSON leak)', async () => {
     let capturedPrompt = '';
+    let capturedOptions = null;
     const mockSession = {
-      prompt: async (prompt) => {
+      prompt: async (prompt, options) => {
         capturedPrompt = prompt;
+        capturedOptions = options;
         return 'Model reply acknowledging inspection.';
       },
     };
@@ -121,16 +124,20 @@ test.describe('unit: runChat (dependency injection)', () => {
 
     const result = await runChat('What is the capital of France?', 'test', 'sess', null, { state });
 
-    // Inspection ran first
+    // Inspection ran first and is in result
     expect(result.inspection).toBeDefined();
     expect(result.inspection.wordCount).toBe(6);
     expect(result.inspection.hasQuestion).toBe(true);
 
-    // Model received the full prompt: inspection context + original message
-    expect(capturedPrompt).toContain('Inspection of user message');
-    expect(capturedPrompt).toContain(JSON.stringify(result.inspection));
-    expect(capturedPrompt).toContain('What is the capital of France?');
-    expect(capturedPrompt).toContain('User:');
+    // User message passed cleanly — no raw JSON wrapper
+    expect(capturedPrompt).toBe('What is the capital of France?');
+    expect(capturedPrompt).not.toContain('Inspection of user message');
+    expect(capturedPrompt).not.toContain('messageLength');
+
+    // Generation options passed
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions.maxTokens).toBe(160);
+    expect(capturedOptions.temperature).toBe(0.2);
   });
 
   test('model init failure produces deterministic fallback with label', async () => {
@@ -183,6 +190,317 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.finishReason).toBe('stop');
     expect(result.response).toContain('fake success');
     expect(result.inspection).toBeDefined();
+  });
+
+  test('defense-in-depth rejects response containing leaked inspection markers', async () => {
+    const leakySession = {
+      prompt: async () => '[Inspection of user message: {"wordCount":1}] This is a leaky response.',
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: leakySession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    // Should not include leaked data — should fallback
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(result.fallbackReason).toBe('Response contained leaked internal data');
+    expect(result.response).not.toContain('[Inspection of user message');
+  });
+
+  test('defense-in-depth lets legitimate JSON/code/braces through (rejects only specific markers)', async () => {
+    const cleanSession = {
+      prompt: async () => 'Here is JSON: {"key":"value","nested":[1,2,3]}. And code: const x = fn();',
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: cleanSession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    // Legitimate JSON/braces/code pass through — finishReason is 'stop'
+    expect(result.model).not.toBe('fallback');
+    expect(result.finishReason).toBe('stop');
+    expect(result.response).toContain('{"key":"value"');
+    expect(result.response).toContain('[1,2,3]');
+    expect(result.response).toContain('const x = fn()');
+  });
+
+  test('defense-in-depth rejects empty model response', async () => {
+    const emptySession = {
+      prompt: async () => '',
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: emptySession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(result.fallbackReason).toBe('Empty response from model');
+  });
+
+  test('requests are isolated via sequence.clearHistory + fresh session per request', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const MockSessionClass = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: MockSessionClass,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    const first = await runChat('foo', 'test', 'sess', null, { state });
+    const second = await runChat('bar', 'test', 'sess', null, { state });
+
+    // Each request created a fresh session and cleared the sequence
+    expect(sessionCount).toBe(2);
+    expect(clearHistoryCalls).toBe(2);
+
+    // Each request passed only its own message — no bleed
+    expect(prompts).toEqual(['foo', 'bar']);
+
+    // Responses are independent
+    expect(first.response).toBe('response to: foo');
+    expect(second.response).toBe('response to: bar');
+
+    // System prompt includes inspection info as natural language
+    expect(first.inspection).toBeDefined();
+    expect(first.inspection.wordCount).toBe(1);
+  });
+
+  test('throwing request does not deadlock next request (sequence lock try/finally)', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    // First call to prompt() throws; second succeeds
+    let callIndex = 0;
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const ThrowThenWorkSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        const idx = callIndex++;
+        if (idx === 0) {
+          throw new Error('Simulated inference crash');
+        }
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: ThrowThenWorkSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // First request throws inside the lock — releases the lock (finally)
+    const first = await runChat('crash-msg', 'test', 'sess', null, { state });
+
+    // First returns fallback because inference threw
+    expect(first.model).toBe('fallback');
+    expect(first.finishReason).toBe('fallback');
+    expect(first.fallbackReason).toContain('Simulated inference crash');
+
+    // Second request proceeds without deadlock
+    const second = await runChat('hello', 'test', 'sess', null, { state });
+
+    expect(second.model).toBe('test-model');
+    expect(second.finishReason).toBe('stop');
+    expect(second.response).toBe('response to: hello');
+
+    // clearHistory was called for each attempt (lock acquired both times)
+    expect(clearHistoryCalls).toBe(2);
+
+    // Only the successful session recorded its prompt
+    expect(sessionCount).toBe(2);
+    expect(prompts).toEqual(['hello']);
+  });
+
+  test('concurrent requests serialize safely via sequenceLock — in-flight count tracks ordering', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    let maxInFlight = 0;
+    let currentInFlight = 0;
+    const executionOrder = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const ConcurrentSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        currentInFlight++;
+        maxInFlight = Math.max(maxInFlight, currentInFlight);
+        executionOrder.push(message);
+        // Simulate real work
+        await new Promise(r => setTimeout(r, 10));
+        const result = `response to: ${message}`;
+        currentInFlight--;
+        return result;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: ConcurrentSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // Fire 5 requests concurrently with rare distinct canaries
+    const requests = [
+      runChat('canary-XANADU', 'test', 'sess', null, { state }),
+      runChat('canary-KALEIDO', 'test', 'sess', null, { state }),
+      runChat('canary-ZEPHYRUS', 'test', 'sess', null, { state }),
+      runChat('canary-QUASARIA', 'test', 'sess', null, { state }),
+      runChat('canary-MOONWALK', 'test', 'sess', null, { state }),
+    ];
+
+    const results = await Promise.all(requests);
+
+    // All 5 succeed
+    expect(results).toHaveLength(5);
+    for (const r of results) {
+      expect(r.finishReason).toBe('stop');
+      expect(r.model).toBe('test-model');
+    }
+
+    // Max concurrency was exactly 1 (serialized through lock)
+    expect(maxInFlight).toBe(1);
+
+    // Each response matches its canary — no cross-contamination
+    const responses = results.map(r => r.response);
+    expect(responses).toContain('response to: canary-XANADU');
+    expect(responses).toContain('response to: canary-KALEIDO');
+    expect(responses).toContain('response to: canary-ZEPHYRUS');
+    expect(responses).toContain('response to: canary-QUASARIA');
+    expect(responses).toContain('response to: canary-MOONWALK');
+
+    // Execution was sequential — all 5 canaries started and ended in order
+    expect(executionOrder).toEqual(['canary-XANADU', 'canary-KALEIDO', 'canary-ZEPHYRUS', 'canary-QUASARIA', 'canary-MOONWALK']);
+
+    // clearHistory called exactly once per request (serialized)
+    expect(clearHistoryCalls).toBe(5);
+    expect(sessionCount).toBe(5);
+  });
+
+  test('session creation throw followed by successful request — lock releases', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    // Constructor throws for first session, succeeding sessions work
+    const FailingConstructorSession = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+        if (sessionCount === 1) {
+          throw new Error('Session creation failed: OOM');
+        }
+      }
+      async prompt(message) {
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: FailingConstructorSession,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    // First request's session constructor throws before prompt — the
+    // lock must still release for the next request
+    const first = await runChat('first-msg', 'test', 'sess', null, { state });
+    expect(first.finishReason).toBe('fallback');
+    expect(first.fallbackReason).toContain('Session creation failed: OOM');
+
+    // Second request succeeds — proves lock was released
+    const second = await runChat('second-msg', 'test', 'sess', null, { state });
+    expect(second.finishReason).toBe('stop');
+    expect(second.response).toBe('response to: second-msg');
+
+    // Only the successful request recorded its prompt
+    expect(prompts).toEqual(['second-msg']);
+
+    // clearHistory was called for each attempt
+    expect(clearHistoryCalls).toBe(2);
+  });
+
+  test('model URL is exactly Qwen2.5-0.5B-Instruct Q4_K_M', async () => {
+    // MODEL_URL is not exported — read source file directly
+    const { readFileSync } = await import('node:fs');
+    const { join, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'server.mjs'), 'utf8');
+    const urlMatch = source.match(/MODEL_URL\s*=\s*'([^']+)'/);
+    expect(urlMatch).toBeTruthy();
+    expect(urlMatch[1]).toBe('hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M');
   });
 });
 

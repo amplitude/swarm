@@ -11,7 +11,7 @@
  *
  * Key contract for POST /api/chat:
  *   { response, finishReason, inspection, model }
- *   - model: "fake" | "fallback" | "tinyllama-1.1b"
+ *   - model: "fake" | "fallback" | "qwen2.5-1.5b-instruct"
  *   - finishReason: "stop" | "fallback"
  *   - inspection always present with messageLength, wordCount, etc.
  */
@@ -86,6 +86,7 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.sentiment).toBe('positive');
     expect(result.classification).toBe('medium');
     expect(typeof result.timestamp).toBe('number');
+    expect(inspectMessage('Please draft a feedback letter.').hasCode).toBe(false);
   });
 
   test('clients cannot force fake behavior in real mode — mode is ignored', async () => {
@@ -103,11 +104,13 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.response).toBe('Real model response');
   });
 
-  test('exact order and dataflow: inspect_message runs, then model receives inspection context + original message', async () => {
+  test('inspect_message runs first; user message passed cleanly to model (no raw JSON leak)', async () => {
     let capturedPrompt = '';
+    let capturedOptions = null;
     const mockSession = {
-      prompt: async (prompt) => {
+      prompt: async (prompt, options) => {
         capturedPrompt = prompt;
+        capturedOptions = options;
         return 'Model reply acknowledging inspection.';
       },
     };
@@ -121,16 +124,20 @@ test.describe('unit: runChat (dependency injection)', () => {
 
     const result = await runChat('What is the capital of France?', 'test', 'sess', null, { state });
 
-    // Inspection ran first
+    // Inspection ran first and is in result
     expect(result.inspection).toBeDefined();
     expect(result.inspection.wordCount).toBe(6);
     expect(result.inspection.hasQuestion).toBe(true);
 
-    // Model received the full prompt: inspection context + original message
-    expect(capturedPrompt).toContain('Inspection of user message');
-    expect(capturedPrompt).toContain(JSON.stringify(result.inspection));
-    expect(capturedPrompt).toContain('What is the capital of France?');
-    expect(capturedPrompt).toContain('User:');
+    // User message passed cleanly — no raw JSON wrapper
+    expect(capturedPrompt).toBe('What is the capital of France?');
+    expect(capturedPrompt).not.toContain('Inspection of user message');
+    expect(capturedPrompt).not.toContain('messageLength');
+
+    // Generation options passed
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions.maxTokens).toBe(160);
+    expect(capturedOptions.temperature).toBe(0.2);
   });
 
   test('model init failure produces deterministic fallback with label', async () => {
@@ -183,6 +190,94 @@ test.describe('unit: runChat (dependency injection)', () => {
     expect(result.finishReason).toBe('stop');
     expect(result.response).toContain('fake success');
     expect(result.inspection).toBeDefined();
+  });
+
+  test('defense-in-depth rejects response containing leaked inspection markers', async () => {
+    const leakySession = {
+      prompt: async () => '[Inspection of user message: {"wordCount":1}] This is a leaky response.',
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: leakySession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    // Should not include leaked data — should fallback
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(result.fallbackReason).toBe('Response contained leaked internal data');
+    expect(result.response).not.toContain('[Inspection of user message');
+  });
+
+  test('defense-in-depth rejects empty model response', async () => {
+    const emptySession = {
+      prompt: async () => '',
+    };
+    const state = {
+      status: 'ready',
+      loaded: true,
+      session: emptySession,
+      error: null,
+    };
+
+    const result = await runChat('Hello', 'test', 'sess', null, { state });
+
+    expect(result.model).toBe('fallback');
+    expect(result.finishReason).toBe('fallback');
+    expect(result.fallbackReason).toBe('Empty response from model');
+  });
+
+  test('requests are isolated via sequence.clearHistory + fresh session per request', async () => {
+    let clearHistoryCalls = 0;
+    let sessionCount = 0;
+    const prompts = [];
+
+    const mockSequence = {
+      clearHistory() {
+        clearHistoryCalls += 1;
+      },
+    };
+
+    const MockSessionClass = class {
+      constructor(opts) {
+        sessionCount += 1;
+        this.sequence = opts.contextSequence;
+      }
+      async prompt(message) {
+        prompts.push(message);
+        return `response to: ${message}`;
+      }
+    };
+
+    const state = {
+      status: 'ready',
+      loaded: true,
+      modelName: 'test-model',
+      LlamaChatSession: MockSessionClass,
+      context: {},
+      sequence: mockSequence,
+    };
+
+    const first = await runChat('foo', 'test', 'sess', null, { state });
+    const second = await runChat('bar', 'test', 'sess', null, { state });
+
+    // Each request created a fresh session and cleared the sequence
+    expect(sessionCount).toBe(2);
+    expect(clearHistoryCalls).toBe(2);
+
+    // Each request passed only its own message — no bleed
+    expect(prompts).toEqual(['foo', 'bar']);
+
+    // Responses are independent
+    expect(first.response).toBe('response to: foo');
+    expect(second.response).toBe('response to: bar');
+
+    // System prompt includes inspection info as natural language
+    expect(first.inspection).toBeDefined();
+    expect(first.inspection.wordCount).toBe(1);
   });
 });
 

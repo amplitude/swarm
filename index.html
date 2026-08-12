@@ -263,6 +263,20 @@ const urlParams = new URLSearchParams(window.location.search);
 const MODE = urlParams.get('mode') || null;
 const VALID_MODES = ['success','empty','error','timeout'];
 const isMode = MODE && VALID_MODES.includes(MODE);
+const USER_ID_KEY = 'swarm_user_id';
+const SESSION_ID_KEY = 'swarm_session_id';
+
+function stableId(storageKey, prefix) {
+  let value = localStorage.getItem(storageKey);
+  if (!value) {
+    value = `${prefix}_${crypto.randomUUID()}`;
+    localStorage.setItem(storageKey, value);
+  }
+  return value;
+}
+
+const USER_ID = stableId(USER_ID_KEY, 'user');
+const SESSION_ID = stableId(SESSION_ID_KEY, 'session');
 
 const state = {
   messages: [],
@@ -281,8 +295,8 @@ const $ = (id) => document.getElementById(id);
 async function sendToServer(userMessage) {
   const body = {
     message: userMessage,
-    userId: 'browser',
-    sessionId: `session_${Date.now()}`,
+    userId: USER_ID,
+    sessionId: SESSION_ID,
   };
   if (MODE) body.mode = MODE;
 
@@ -328,7 +342,7 @@ function updateUI() {
   charCount.className = 'char-count' + (len >= 2000 ? ' over' : '');
 
   // Mode badge
-  if (isMode || (state.modelInfo && state.modelInfo !== 'tinyllama-1.1b')) {
+  if (isMode || state.modelInfo) {
     const label = isMode ? 'mode: ' + MODE : (state.modelInfo || 'unknown');
     modeBadge.textContent = label;
     modeBadge.style.display = '';
